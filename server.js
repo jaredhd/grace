@@ -6,9 +6,33 @@ const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me-now';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ==================== ADMIN AUTH ====================
+const requireAdmin = (req, res, next) => {
+  const token = req.headers['x-admin-token'];
+  if (!token || token !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+};
+
+// Serve admin dashboard (password checked client-side, then token sent with all API calls)
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ error: 'Wrong password' });
+  }
+});
+
+app.get('/admin/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin', 'dashboard.html'));
+});
 
 // Initialize Claude client
 const anthropic = new Anthropic.default({
@@ -158,7 +182,7 @@ app.post('/api/feedback', (req, res) => {
   res.json({ id, thanks: helpful ? "Thank you. That means a lot." : "Thank you for your honesty. It helps me grow." });
 });
 
-app.get('/api/feedback/stats', (req, res) => {
+app.get('/api/feedback/stats', requireAdmin, (req, res) => {
   const stats = db.getFeedbackStats();
   res.json(stats);
 });
@@ -178,7 +202,7 @@ Rules:
 - End with a question that invites the reader to think deeper
 - Do NOT use markdown headers or bullet points. Write in flowing paragraphs.`;
 
-app.post('/api/journal/generate', async (req, res) => {
+app.post('/api/journal/generate', requireAdmin, async (req, res) => {
   const { topic } = req.body;
   if (!topic) return res.status(400).json({ error: 'topic required' });
 
@@ -261,7 +285,7 @@ You're writing to REAL PEOPLE who are:
 - Wanting connection but feeling isolated
 - Looking for hope that isn't naive`;
 
-app.post('/api/social/generate', async (req, res) => {
+app.post('/api/social/generate', requireAdmin, async (req, res) => {
   const { platform, topic } = req.body;
   if (!platform) return res.status(400).json({ error: 'platform required' });
 
@@ -295,7 +319,7 @@ app.post('/api/social/generate', async (req, res) => {
 });
 
 // Generate a batch of content for all platforms
-app.post('/api/social/batch', async (req, res) => {
+app.post('/api/social/batch', requireAdmin, async (req, res) => {
   const { topic } = req.body;
   const platforms = ['twitter', 'reddit', 'linkedin', 'bluesky'];
   const results = {};
