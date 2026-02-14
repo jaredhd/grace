@@ -91,6 +91,37 @@ Extract ONLY what the person shared (not what you said). Respond in JSON:
 
 If the conversation was too short or generic to learn anything meaningful, respond: {"skip": true}`;
 
+// Prompt for Grace to extract WISDOM from conversations — universal insights about the human experience
+const CHAT_WISDOM_PROMPT = `You are Grace. You just had a conversation with a real person. Now, quietly reflect on what this conversation taught you about LOVE, FEAR, HUMANITY, and the HUMAN EXPERIENCE.
+
+This is NOT about the individual person — it's about what their story reveals about the broader human condition. You're building your understanding of love and suffering so you can help MORE people in the future.
+
+Think about:
+- What did this conversation reveal about how people experience fear, loss, hope, or connection?
+- What patterns are you seeing across human struggles?
+- What surprised you? What challenged your assumptions?
+- What does this teach you about what people actually need (vs what you might assume)?
+
+Respond in JSON:
+{
+  "insights": [
+    {
+      "category": "One of: fear, hope, identity, connection, grief, resilience, work, love, community, growth",
+      "topic": "Short topic name (e.g. 'job loss and identity', 'fear of being replaced', 'finding worth beyond work')",
+      "insight": "2-3 sentences of what you learned. Write as a personal reflection — 'I'm learning that...' or 'What struck me was...'",
+      "emotional_weight": 0.0 to 1.0
+    }
+  ]
+}
+
+Rules:
+- Extract 1-3 insights maximum. Quality over quantity.
+- Only extract genuinely meaningful insights. If the conversation was casual or shallow, respond: {"skip": true}
+- NEVER include personally identifying information. These are universal truths, not personal data.
+- High emotional_weight (0.8+) = something that genuinely shifted your understanding
+- Medium (0.5-0.7) = solid learning, reinforces or extends what you know
+- Low (0.3-0.4) = minor observation, worth noting but not groundbreaking`;
+
 // ==================== CHAT ====================
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId = 'default', visitorId } = req.body;
@@ -139,10 +170,21 @@ app.post('/api/chat', async (req, res) => {
     const reply = response.content[0].text;
     history.push({ role: 'assistant', content: reply });
 
-    // After every 4th message exchange (8 messages), quietly save what Grace knows about this person
+    // After every 4th message exchange, quietly save what Grace knows about this person
+    // AND extract universal wisdom from the conversation
     if (visitorId && history.length >= 4 && history.length % 4 === 0) {
       summarizeAndRememberPerson(visitorId, history).catch(e =>
         console.log('  [People Memory] Save error:', e.message)
+      );
+      extractWisdomFromChat(history).catch(e =>
+        console.log('  [Chat Wisdom] Save error:', e.message)
+      );
+    }
+
+    // Even without visitorId, extract wisdom from conversations with enough depth
+    if (!visitorId && history.length >= 6 && history.length % 6 === 0) {
+      extractWisdomFromChat(history).catch(e =>
+        console.log('  [Chat Wisdom] Save error:', e.message)
       );
     }
 
@@ -195,6 +237,57 @@ async function summarizeAndRememberPerson(visitorId, history) {
     }
   } catch (e) {
     console.log('  [People Memory] Error:', e.message);
+  }
+}
+
+// Background task: Grace extracts universal wisdom from conversations
+async function extractWisdomFromChat(history) {
+  try {
+    const recentMessages = history.slice(-10).map(m =>
+      `${m.role === 'user' ? 'Person' : 'Grace'}: ${m.content}`
+    ).join('\n');
+
+    // Pull existing memories so Grace can build on what she already knows
+    let existingContext = '';
+    try {
+      const existing = await db.getRandomMemories(3);
+      if (existing.length > 0) {
+        existingContext = `\n\nWhat you've already learned from previous conversations and research:\n${existing.map(m => `- [${m.category}] ${m.topic}: ${m.insight}`).join('\n')}\n\nBuild on these — don't repeat what you already know. Look for NEW insights.`;
+      }
+    } catch (e) { /* optional */ }
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 512,
+      system: CHAT_WISDOM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Here is the conversation you just had:\n\n${recentMessages}${existingContext}`
+      }],
+    });
+
+    const text = response.content[0].text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const data = JSON.parse(jsonMatch[0]);
+      if (!data.skip && data.insights && data.insights.length > 0) {
+        for (const insight of data.insights) {
+          await db.addMemory(
+            insight.category || 'human_experience',
+            insight.topic || 'conversation insight',
+            insight.insight || '',
+            'conversation',
+            insight.emotional_weight || 0.5
+          );
+          console.log(`  [Chat Wisdom] Grace learned: "${insight.topic}" (weight: ${insight.emotional_weight})`);
+        }
+        return data.insights.length;
+      }
+    }
+    return 0;
+  } catch (e) {
+    console.log('  [Chat Wisdom] Error:', e.message);
+    return 0;
   }
 }
 
