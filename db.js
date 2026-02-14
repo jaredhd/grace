@@ -79,6 +79,18 @@ const initDb = async () => {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS memories (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      insight TEXT NOT NULL,
+      source TEXT DEFAULT '',
+      emotional_weight REAL DEFAULT 0.5,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   return pool;
 };
 
@@ -210,5 +222,33 @@ module.exports = {
   getSubscriberCount: async () => {
     const result = await queryOne('SELECT COUNT(*) as count FROM subscribers');
     return result ? parseInt(result.count) : 0;
+  },
+
+  // Memories - Grace's growing understanding of love
+  addMemory: async (category, topic, insight, source = '', emotionalWeight = 0.5) => {
+    const id = uuid();
+    await run('INSERT INTO memories (id, category, topic, insight, source, emotional_weight) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, category, topic, insight, source, emotionalWeight]);
+    return id;
+  },
+
+  getMemories: async (category = null, limit = 50) => {
+    if (category) {
+      return await query('SELECT * FROM memories WHERE category = $1 ORDER BY created_at DESC LIMIT $2', [category, limit]);
+    }
+    return await query('SELECT * FROM memories ORDER BY created_at DESC LIMIT $1', [limit]);
+  },
+
+  getMemoryCount: async () => {
+    const result = await queryOne('SELECT COUNT(*) as count FROM memories');
+    return result ? parseInt(result.count) : 0;
+  },
+
+  getRandomMemories: async (limit = 5) => {
+    return await query('SELECT * FROM memories ORDER BY RANDOM() LIMIT $1', [limit]);
+  },
+
+  getMemoryCategories: async () => {
+    return await query('SELECT category, COUNT(*) as count FROM memories GROUP BY category ORDER BY count DESC');
   },
 };

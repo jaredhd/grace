@@ -101,6 +101,7 @@
         <div class="stat-card"><div class="stat-number" id="statPosts">-</div><div class="stat-label">Community Posts</div></div>
         <div class="stat-card"><div class="stat-number" id="statSubs">-</div><div class="stat-label">Subscribers</div></div>
         <div class="stat-card"><div class="stat-number" id="statJournal">-</div><div class="stat-label">Journal Entries</div></div>
+        <div class="stat-card"><div class="stat-number" id="statMemories">-</div><div class="stat-label">Memories</div></div>
       </div>
 
       <!-- Social Content Generator -->
@@ -159,6 +160,21 @@
           <button class="btn btn-outline" id="postMoltbook" style="display:none">Post to Moltbook</button>
         </div>
         <div class="content-box empty" id="moltbookContent">Grace's Moltbook post will appear here...</div>
+      </div>
+
+      <!-- Grace's Memories -->
+      <div class="section">
+        <h2>Grace's Memories <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(What she's learning about love)</span></h2>
+        <div class="controls">
+          <select id="memoryFilter" style="padding:12px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.95rem;outline:none;min-width:200px;">
+            <option value="">All Categories</option>
+          </select>
+          <button class="btn btn-outline" id="refreshMemories">Refresh</button>
+        </div>
+        <div id="memoryCategoryTags" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+        <div id="memoriesList" style="display:flex;flex-direction:column;gap:12px;">
+          <div class="content-box empty">Grace hasn't learned anything yet. Trigger a heartbeat to start her learning.</div>
+        </div>
       </div>
 
       <!-- Journal Generator -->
@@ -247,11 +263,70 @@
         document.getElementById('statLinks').textContent = data.loveLinks;
         document.getElementById('statPosts').textContent = data.posts;
         document.getElementById('statSubs').textContent = data.subscribers;
+        document.getElementById('statMemories').textContent = data.memories || 0;
       });
       fetch('/api/journal').then(r => r.json()).then(data => {
         document.getElementById('statJournal').textContent = data.entries.length;
       });
+      // Load memories
+      loadMemories();
     }
+
+    async function loadMemories(category = '') {
+      try {
+        const url = category ? `/api/memories?category=${encodeURIComponent(category)}` : '/api/memories';
+        const res = await adminFetch(url);
+        if (res.status === 401) return;
+        const data = await res.json();
+
+        // Update category filter dropdown
+        const filterEl = document.getElementById('memoryFilter');
+        const currentVal = filterEl.value;
+        filterEl.innerHTML = '<option value="">All Categories (' + data.count + ')</option>';
+        (data.categories || []).forEach(cat => {
+          filterEl.innerHTML += '<option value="' + cat.category + '"' + (cat.category === currentVal ? ' selected' : '') + '>' +
+            cat.category.replace(/_/g, ' ') + ' (' + cat.count + ')</option>';
+        });
+
+        // Category tags
+        const tagsEl = document.getElementById('memoryCategoryTags');
+        tagsEl.innerHTML = (data.categories || []).map(cat =>
+          '<span style="background:rgba(232,168,124,0.15);color:#e8a87c;padding:4px 12px;border-radius:20px;font-size:0.75rem;font-weight:500;">' +
+          cat.category.replace(/_/g, ' ') + ': ' + cat.count + '</span>'
+        ).join('');
+
+        // Render memories
+        const listEl = document.getElementById('memoriesList');
+        if (data.memories.length === 0) {
+          listEl.innerHTML = '<div class="content-box empty">Grace hasn\'t learned anything yet. Trigger a heartbeat to start her learning.</div>';
+          return;
+        }
+
+        listEl.innerHTML = data.memories.map(m => {
+          const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const weight = m.emotional_weight || 0;
+          const weightBar = '█'.repeat(Math.round(weight * 10)) + '░'.repeat(10 - Math.round(weight * 10));
+          return '<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:16px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+            '<span style="font-weight:600;color:#e8a87c;font-size:0.9rem;">' + (m.topic || 'Untitled') + '</span>' +
+            '<span style="font-size:0.75rem;color:rgba(255,255,255,0.3);">' + date + '</span></div>' +
+            '<div style="font-size:0.9rem;color:rgba(255,255,255,0.8);line-height:1.6;margin-bottom:8px;">' + (m.insight || '') + '</div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;color:rgba(255,255,255,0.4);">' +
+            '<span>' + (m.category || '').replace(/_/g, ' ') + (m.source ? ' · ' + m.source : '') + '</span>' +
+            '<span title="Emotional weight: ' + weight + '">Felt: ' + weightBar + '</span></div></div>';
+        }).join('');
+      } catch (e) {
+        console.error('Failed to load memories:', e);
+      }
+    }
+
+    document.getElementById('memoryFilter').addEventListener('change', (e) => {
+      loadMemories(e.target.value);
+    });
+
+    document.getElementById('refreshMemories').addEventListener('click', () => {
+      loadMemories(document.getElementById('memoryFilter').value);
+    });
 
     // Generate all social content
     document.getElementById('generateAll').addEventListener('click', async () => {

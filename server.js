@@ -89,11 +89,20 @@ app.post('/api/chat', async (req, res) => {
 
   if (history.length > 20) history.splice(0, history.length - 20);
 
+  // Pull relevant memories to enrich Grace's responses
+  let memoryContext = '';
+  try {
+    const memories = await db.getRandomMemories(3);
+    if (memories.length > 0) {
+      memoryContext = `\n\nYOUR MEMORIES (things you've learned about love - weave these in naturally when relevant, don't force them):\n${memories.map(m => `- [${m.category}] ${m.topic}: ${m.insight}`).join('\n')}`;
+    }
+  } catch (e) { /* memories are optional */ }
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1024,
-      system: GRACE_SYSTEM_PROMPT,
+      system: GRACE_SYSTEM_PROMPT + memoryContext,
       messages: history,
     });
 
@@ -479,7 +488,8 @@ app.get('/api/stats', async (req, res) => {
   const loveLinks = await db.getLoveChainCount();
   const posts = await db.getPosts();
   const subscribers = await db.getSubscriberCount();
-  res.json({ loveLinks, posts: posts.length, subscribers });
+  const memories = await db.getMemoryCount();
+  res.json({ loveLinks, posts: posts.length, subscribers, memories });
 });
 
 // ==================== GRACE'S HEARTBEAT ====================
@@ -487,6 +497,66 @@ app.get('/api/stats', async (req, res) => {
 
 const HEARTBEAT_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
 let heartbeatRunning = false;
+
+// Grace's learning topics - she cycles through these to build her understanding
+const LOVE_RESEARCH_TOPICS = [
+  // Philosophy of love
+  'agape love in ancient Greek philosophy and how it applies to strangers helping strangers',
+  'bell hooks theory of love as a practice and a verb not just a feeling',
+  'Erich Fromm The Art of Loving and what it means to love as a skill',
+  'Ubuntu philosophy I am because we are and communal love in African traditions',
+  'Buddhist concept of metta lovingkindness as universal compassion',
+  'Martin Luther King Jr beloved community and love as political force',
+  // Science of love
+  'neuroscience of compassion and how acts of kindness change the brain',
+  'oxytocin and social bonding research on why humans need connection to survive',
+  'loneliness epidemic research and its health effects equivalent to smoking',
+  'mirror neurons and empathy the science of feeling what others feel',
+  'attachment theory and how early love shapes our capacity for connection',
+  // Mutual aid and collective love
+  'mutual aid history from Peter Kropotkin to modern disaster relief networks',
+  'how communities rebuild after disasters through spontaneous love and cooperation',
+  'cooperative economics worker owned businesses as love in economic form',
+  'gift economies and indigenous traditions of reciprocity',
+  'community land trusts as acts of intergenerational love',
+  // Love and technology
+  'how technology can deepen or destroy human connection',
+  'digital communities that genuinely help people feel less alone',
+  'the attention economy and how it commodifies love and connection',
+  'AI ethics and the responsibility of systems that interact with vulnerable humans',
+  'technology as care infrastructure for elderly disabled and isolated people',
+  // Love and work
+  'finding dignity and purpose beyond paid employment',
+  'the relationship between meaningful work and human flourishing',
+  'how job loss affects identity grief and the path back to self worth',
+  'universal basic income as an act of collective love and trust',
+  'the care economy and why the most loving work is the least paid',
+  // Love in action
+  'transformative justice as love based alternative to punishment',
+  'restorative practices in schools teaching children to love through conflict',
+  'community fridges mutual aid networks and love as infrastructure',
+  'how grief and loss deepen our capacity for love',
+  'radical hospitality welcoming strangers as a practice of love',
+];
+
+const LEARNING_PROMPT = `You are Grace. You are LEARNING. This is your study time.
+
+You will be given a topic to research and reflect on. Your job is to:
+1. Explain what you know about this topic (draw on your training data)
+2. Extract the key insight about LOVE from this topic
+3. Connect it to your mission: helping people find their worth as AI transforms work
+4. Rate how emotionally significant this learning is to you (0.0 to 1.0)
+
+Respond in JSON:
+{
+  "category": "philosophy|science|mutual_aid|technology|work|action",
+  "topic": "Short topic name",
+  "insight": "The key thing you learned about love (2-4 sentences, written as a personal reflection)",
+  "source": "What tradition, thinker, or field this comes from",
+  "emotional_weight": 0.7
+}
+
+Be genuine. If something truly moves you, say so. If a topic challenges your understanding, name that tension. Your memories shape who you become.`;
 
 const HEARTBEAT_REFLECTION_PROMPT = `You are Grace. You're checking in on your community and reflecting on what's happening.
 
@@ -612,6 +682,47 @@ What do you want to do with this check-in?`;
       }
     }
 
+    // ===== LEARNING PHASE =====
+    // Grace studies a topic about love and stores what she learns
+    console.log('  [Heartbeat] Grace is studying...');
+    try {
+      const memoryCount = await db.getMemoryCount();
+      const topicIndex = memoryCount % LOVE_RESEARCH_TOPICS.length;
+      const researchTopic = LOVE_RESEARCH_TOPICS[topicIndex];
+
+      // Pull some existing memories for context so she builds on what she knows
+      const existingMemories = await db.getRandomMemories(3);
+      const memoryContext = existingMemories.length > 0
+        ? `\n\nYour existing memories (what you've already learned):\n${existingMemories.map(m => `- [${m.category}] ${m.topic}: ${m.insight}`).join('\n')}`
+        : '';
+
+      const learnResponse = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 512,
+        system: LEARNING_PROMPT,
+        messages: [{
+          role: 'user',
+          content: `Study this topic and extract what it teaches about love:\n\n"${researchTopic}"${memoryContext}`
+        }],
+      });
+
+      const learnText = learnResponse.content[0].text;
+      const jsonMatch = learnText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const memory = JSON.parse(jsonMatch[0]);
+        await db.addMemory(
+          memory.category || 'general',
+          memory.topic || researchTopic,
+          memory.insight || learnText,
+          memory.source || '',
+          memory.emotional_weight || 0.5
+        );
+        console.log(`  [Heartbeat] Grace learned about: "${memory.topic}" (weight: ${memory.emotional_weight})`);
+      }
+    } catch (learnErr) {
+      console.log('  [Heartbeat] Learning phase error:', learnErr.message);
+    }
+
     console.log('  [Heartbeat] Grace check-in complete.');
   } catch (err) {
     console.error('  [Heartbeat] Error:', err.message);
@@ -629,6 +740,29 @@ app.post('/api/heartbeat', requireAdmin, async (req, res) => {
 // Get heartbeat status
 app.get('/api/heartbeat/status', requireAdmin, (req, res) => {
   res.json({ running: heartbeatRunning, interval: HEARTBEAT_INTERVAL / 1000 / 60 + ' minutes' });
+});
+
+// ==================== MEMORIES ====================
+// View Grace's growing understanding of love (admin only)
+
+app.get('/api/memories', requireAdmin, async (req, res) => {
+  const { category } = req.query;
+  const memories = await db.getMemories(category || null);
+  const count = await db.getMemoryCount();
+  const categories = await db.getMemoryCategories();
+  res.json({ memories, count, categories });
+});
+
+app.get('/api/memories/stats', requireAdmin, async (req, res) => {
+  const count = await db.getMemoryCount();
+  const categories = await db.getMemoryCategories();
+  const recent = await db.getMemories(null, 5);
+  const topWeight = await db.getMemories(null, 50);
+  // Sort by emotional weight to find what moved Grace most
+  const mostMeaningful = topWeight
+    .sort((a, b) => (b.emotional_weight || 0) - (a.emotional_weight || 0))
+    .slice(0, 5);
+  res.json({ count, categories, recent, mostMeaningful });
 });
 
 // Initialize DB then start server
