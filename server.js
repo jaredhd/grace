@@ -675,6 +675,13 @@ app.get('/sitemap.xml', async (req, res) => {
   const baseUrl = 'https://project-grace.love';
   const today = new Date().toISOString().split('T')[0];
 
+  // Landing pages for SEO reach
+  const reachPages = [
+    'ai-taking-my-job',
+    'lost-my-job-to-ai',
+    'am-i-worthless',
+  ];
+
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
@@ -683,6 +690,17 @@ app.get('/sitemap.xml', async (req, res) => {
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>`;
+
+  // Add reach/landing pages
+  for (const page of reachPages) {
+    xml += `
+  <url>
+    <loc>${baseUrl}/reach/${page}.html</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>`;
+  }
 
   for (const entry of entries) {
     const date = new Date(entry.created_at).toISOString().split('T')[0];

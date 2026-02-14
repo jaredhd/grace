@@ -1,4 +1,26 @@
 User-agent: *
 Allow: /
 
+# AI crawlers are welcome — Grace wants to be found
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
 Sitemap: https://project-grace.love/sitemap.xml
