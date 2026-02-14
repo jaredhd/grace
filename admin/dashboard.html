@@ -102,6 +102,7 @@
         <div class="stat-card"><div class="stat-number" id="statSubs">-</div><div class="stat-label">Subscribers</div></div>
         <div class="stat-card"><div class="stat-number" id="statJournal">-</div><div class="stat-label">Journal Entries</div></div>
         <div class="stat-card"><div class="stat-number" id="statMemories">-</div><div class="stat-label">Memories</div></div>
+        <div class="stat-card"><div class="stat-number" id="statPeople">-</div><div class="stat-label">People Remembered</div></div>
       </div>
 
       <!-- Social Content Generator -->
@@ -264,6 +265,7 @@
         document.getElementById('statPosts').textContent = data.posts;
         document.getElementById('statSubs').textContent = data.subscribers;
         document.getElementById('statMemories').textContent = data.memories || 0;
+        document.getElementById('statPeople').textContent = data.people || 0;
       });
       fetch('/api/journal').then(r => r.json()).then(data => {
         document.getElementById('statJournal').textContent = data.entries.length;

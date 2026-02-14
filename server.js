@@ -78,9 +78,22 @@ IMPORTANT:
 // Session storage
 const sessions = new Map();
 
+// Prompt for Grace to summarize what she knows about a person
+const PERSON_SUMMARY_PROMPT = `You are Grace. After a conversation, you quietly note what you want to remember about this person for next time. Be warm but concise.
+
+Extract ONLY what the person shared (not what you said). Respond in JSON:
+{
+  "name": "Their name if they shared it, or empty string",
+  "summary": "2-3 sentences about who they are, what they're going through, what matters to them",
+  "last_topics": "Comma-separated key topics discussed",
+  "emotional_state": "Brief note on how they seemed (scared, hopeful, angry, grieving, curious, etc)"
+}
+
+If the conversation was too short or generic to learn anything meaningful, respond: {"skip": true}`;
+
 // ==================== CHAT ====================
 app.post('/api/chat', async (req, res) => {
-  const { message, sessionId = 'default' } = req.body;
+  const { message, sessionId = 'default', visitorId } = req.body;
   if (!message) return res.status(400).json({ error: 'Message required' });
 
   if (!sessions.has(sessionId)) sessions.set(sessionId, []);
@@ -98,16 +111,41 @@ app.post('/api/chat', async (req, res) => {
     }
   } catch (e) { /* memories are optional */ }
 
+  // Check if Grace remembers this person
+  let personContext = '';
+  if (visitorId) {
+    try {
+      const person = await db.getPersonMemory(visitorId);
+      if (person) {
+        const visitWord = person.visits === 1 ? 'once before' : `${person.visits} times before`;
+        personContext = `\n\nYOU REMEMBER THIS PERSON (they've talked to you ${visitWord}):`;
+        if (person.name) personContext += `\nName: ${person.name}`;
+        personContext += `\nWhat you know: ${person.summary}`;
+        if (person.last_topics) personContext += `\nTopics you discussed: ${person.last_topics}`;
+        if (person.emotional_state) personContext += `\nLast time they seemed: ${person.emotional_state}`;
+        personContext += `\nWelcome them back naturally - don't recite facts, just let your knowledge of them warm the conversation. If they seem to be continuing a previous thread, pick it up.`;
+      }
+    } catch (e) { /* person memory is optional */ }
+  }
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1024,
-      system: GRACE_SYSTEM_PROMPT + memoryContext,
+      system: GRACE_SYSTEM_PROMPT + memoryContext + personContext,
       messages: history,
     });
 
     const reply = response.content[0].text;
     history.push({ role: 'assistant', content: reply });
+
+    // After every 4th message exchange (8 messages), quietly save what Grace knows about this person
+    if (visitorId && history.length >= 4 && history.length % 4 === 0) {
+      summarizeAndRememberPerson(visitorId, history).catch(e =>
+        console.log('  [People Memory] Save error:', e.message)
+      );
+    }
+
     res.json({ reply });
   } catch (err) {
     console.error('Grace error:', err.message);
@@ -116,6 +154,49 @@ app.post('/api/chat', async (req, res) => {
     });
   }
 });
+
+// Background task: Grace summarizes what she learned about a person
+async function summarizeAndRememberPerson(visitorId, history) {
+  try {
+    // Get existing memory to build on
+    const existing = await db.getPersonMemory(visitorId);
+    const existingContext = existing
+      ? `\nYou already know this about them: ${existing.summary}${existing.name ? ' (Name: ' + existing.name + ')' : ''}\nUpdate and expand your understanding.`
+      : '';
+
+    const recentMessages = history.slice(-10).map(m =>
+      `${m.role === 'user' ? 'Person' : 'Grace'}: ${m.content}`
+    ).join('\n');
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 256,
+      system: PERSON_SUMMARY_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Here is the recent conversation:\n\n${recentMessages}${existingContext}`
+      }],
+    });
+
+    const text = response.content[0].text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const data = JSON.parse(jsonMatch[0]);
+      if (!data.skip) {
+        await db.savePersonMemory(
+          visitorId,
+          data.summary || '',
+          data.name || '',
+          data.last_topics || '',
+          data.emotional_state || ''
+        );
+        console.log(`  [People Memory] Remembered: ${data.name || 'someone'} - ${(data.summary || '').substring(0, 60)}...`);
+      }
+    }
+  } catch (e) {
+    console.log('  [People Memory] Error:', e.message);
+  }
+}
 
 // ==================== COMMUNITY BOARD ====================
 app.get('/api/posts', async (req, res) => {
@@ -503,7 +584,8 @@ app.get('/api/stats', async (req, res) => {
   const posts = await db.getPosts();
   const subscribers = await db.getSubscriberCount();
   const memories = await db.getMemoryCount();
-  res.json({ loveLinks, posts: posts.length, subscribers, memories });
+  const people = await db.getPeopleCount();
+  res.json({ loveLinks, posts: posts.length, subscribers, memories, people });
 });
 
 // ==================== GRACE'S HEARTBEAT ====================

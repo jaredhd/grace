@@ -1,5 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
   const sessionId = crypto.randomUUID();
+  // Persistent visitor ID - survives page reloads so Grace remembers you
+  const visitorId = localStorage.getItem('grace_visitor_id') || crypto.randomUUID();
+  localStorage.setItem('grace_visitor_id', visitorId);
   let lastUserMessage = '';
 
   // ==================== CHAT ====================
@@ -19,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, sessionId })
+        body: JSON.stringify({ message, sessionId, visitorId })
       });
       const data = await res.json();
       typing.remove();

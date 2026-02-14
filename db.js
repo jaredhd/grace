@@ -91,6 +91,25 @@ const initDb = async () => {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS people_memory (
+      id TEXT PRIMARY KEY,
+      visitor_id TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      name TEXT DEFAULT '',
+      visits INTEGER DEFAULT 1,
+      last_topics TEXT DEFAULT '',
+      emotional_state TEXT DEFAULT '',
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Index for fast visitor lookups
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_people_memory_visitor ON people_memory (visitor_id)
+  `);
+
   return pool;
 };
 
@@ -250,5 +269,33 @@ module.exports = {
 
   getMemoryCategories: async () => {
     return await query('SELECT category, COUNT(*) as count FROM memories GROUP BY category ORDER BY count DESC');
+  },
+
+  // People memory - Grace remembers who she's talked to
+  getPersonMemory: async (visitorId) => {
+    return await queryOne('SELECT * FROM people_memory WHERE visitor_id = $1', [visitorId]);
+  },
+
+  savePersonMemory: async (visitorId, summary, name = '', lastTopics = '', emotionalState = '') => {
+    const existing = await queryOne('SELECT * FROM people_memory WHERE visitor_id = $1', [visitorId]);
+    if (existing) {
+      await run(
+        `UPDATE people_memory SET summary = $1, name = $2, visits = visits + 1, last_topics = $3, emotional_state = $4, updated_at = NOW() WHERE visitor_id = $5`,
+        [summary, name || existing.name, lastTopics, emotionalState, visitorId]
+      );
+      return existing.id;
+    } else {
+      const id = uuid();
+      await run(
+        'INSERT INTO people_memory (id, visitor_id, summary, name, last_topics, emotional_state) VALUES ($1, $2, $3, $4, $5, $6)',
+        [id, visitorId, summary, name, lastTopics, emotionalState]
+      );
+      return id;
+    }
+  },
+
+  getPeopleCount: async () => {
+    const result = await queryOne('SELECT COUNT(*) as count FROM people_memory');
+    return result ? parseInt(result.count) : 0;
   },
 };
