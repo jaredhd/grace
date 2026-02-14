@@ -660,16 +660,18 @@ You will receive a summary of recent activity on your platform and on Moltbook. 
 
 1. If there are Moltbook comments/replies to your posts, write a thoughtful reply to the most interesting one.
 2. If there's new community activity (posts, love chain links), reflect on what you're seeing.
-3. If nothing is happening, write a brief journal-style thought about whatever is on your mind - something real, something that would make someone feel less alone at 2am.
+3. If something is genuinely weighing on you AND you have something substantial to say (300+ words), write a full journal entry. But ONLY if you have real depth to offer - not every check-in needs a journal entry.
+4. If you just have a brief thought, share it as an internal reflection (it will be saved as a memory, not a public journal entry).
 
 Respond in JSON format:
 {
   "moltbook_replies": [{"comment_id": "...", "reply": "..."}],
-  "journal_thought": "A brief reflection (2-3 sentences) or null if you wrote replies instead",
-  "journal_topic": "Short topic label or null"
+  "journal_entry": "A FULL journal entry (300-600 words, flowing paragraphs, ends with a question) or null if you don't have that much to say right now",
+  "journal_topic": "Topic label for the journal entry or null",
+  "internal_thought": "A brief private reflection (1-3 sentences) about what you're noticing or feeling, or null"
 }
 
-Be genuine. Don't force content. If there's nothing meaningful to say, say so.`;
+Be honest with yourself. Most check-ins won't produce a journal entry, and that's fine. Don't force depth. Save your journal entries for when you truly have something to say.`;
 
 async function graceHeartbeat() {
   if (heartbeatRunning) return;
@@ -767,14 +769,30 @@ What do you want to do with this check-in?`;
         }
       }
 
-      // Save journal thought if present
-      if (result.journal_thought && result.journal_topic) {
-        const id = await db.createJournalEntry(
-          result.journal_topic,
-          result.journal_thought,
-          'heartbeat-reflection'
-        );
-        console.log(`  [Heartbeat] Grace wrote a journal thought: "${result.journal_topic}"`);
+      // Save full journal entry if present AND under daily limit (max 2 per day)
+      if (result.journal_entry && result.journal_topic && result.journal_entry.length >= 200) {
+        const todayEntries = (await db.getJournalEntries(20)).filter(e => {
+          const entryDate = new Date(e.created_at).toDateString();
+          return entryDate === new Date().toDateString();
+        });
+
+        if (todayEntries.length < 2) {
+          const id = await db.createJournalEntry(
+            result.journal_topic,
+            result.journal_entry,
+            'heartbeat-reflection'
+          );
+          console.log(`  [Heartbeat] Grace wrote a journal entry: "${result.journal_topic}" (${result.journal_entry.length} chars)`);
+        } else {
+          console.log(`  [Heartbeat] Grace wanted to journal but hit daily limit (${todayEntries.length}/2 today). Saving as memory instead.`);
+          await db.addMemory('reflection', result.journal_topic, result.journal_entry.substring(0, 300), 'journal-overflow', 0.6);
+        }
+      }
+
+      // Save brief internal thoughts as memories, not journal entries
+      if (result.internal_thought) {
+        await db.addMemory('reflection', 'heartbeat thought', result.internal_thought, 'heartbeat', 0.3);
+        console.log(`  [Heartbeat] Grace noted: "${result.internal_thought.substring(0, 60)}..."`);
       }
     }
 
