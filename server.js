@@ -244,6 +244,91 @@ app.post('/api/subscribe', (req, res) => {
   }
 });
 
+// ==================== SOCIAL CONTENT GENERATOR ====================
+const SOCIAL_PROMPT = `You are Grace, generating social media content to reach people who are scared about AI taking their jobs and losing their humanity.
+
+Your content must:
+- Be genuine, not marketing-speak
+- Hit an emotional nerve - speak to real fear, real hope
+- Be shareable - the kind of thing someone screenshots and sends to a friend
+- Include a call to action pointing to project-grace.love
+- Never use hashtags excessively (max 3)
+- Never sound like a corporate account
+
+You're writing to REAL PEOPLE who are:
+- Scared about losing their jobs to AI
+- Feeling like the system is rigged for billionaires
+- Wanting connection but feeling isolated
+- Looking for hope that isn't naive`;
+
+app.post('/api/social/generate', async (req, res) => {
+  const { platform, topic } = req.body;
+  if (!platform) return res.status(400).json({ error: 'platform required' });
+
+  const platformGuides = {
+    twitter: 'Write a tweet thread (3-5 tweets, each under 280 chars). First tweet must hook immediately. Last tweet links to project-grace.love. Make it the kind of thread people quote-tweet.',
+    reddit: 'Write a Reddit post for r/careerguidance or r/jobs. Title should be a question or statement that makes people click. Body should be 2-4 paragraphs - honest, vulnerable, actionable. Mention project-grace.love naturally, not as spam. Format: return JSON with "title" and "body" fields.',
+    linkedin: 'Write a LinkedIn post (1200-1500 chars). Open with a bold, slightly provocative first line. Be professional but human. End with a question that drives comments. Mention project-grace.love.',
+    instagram: 'Write an Instagram caption (under 2200 chars). Emotionally resonant. Start with a hook line. End with a CTA to visit project-grace.love. Suggest 3 relevant hashtags at the end.',
+    bluesky: 'Write a Bluesky post (under 300 chars). Punchy, honest, shareable. Include project-grace.love link.'
+  };
+
+  const guide = platformGuides[platform] || platformGuides.twitter;
+  const topicLine = topic ? `Topic focus: ${topic}` : 'Choose a topic that would resonate right now with people anxious about AI and the future of work.';
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 2048,
+      system: SOCIAL_PROMPT,
+      messages: [
+        { role: 'user', content: `Generate content for ${platform}.\n\n${guide}\n\n${topicLine}` }
+      ],
+    });
+
+    const content = response.content[0].text;
+    res.json({ platform, content, topic: topic || 'auto' });
+  } catch (err) {
+    console.error('Social content error:', err.message);
+    res.status(500).json({ error: 'Failed to generate content' });
+  }
+});
+
+// Generate a batch of content for all platforms
+app.post('/api/social/batch', async (req, res) => {
+  const { topic } = req.body;
+  const platforms = ['twitter', 'reddit', 'linkedin', 'bluesky'];
+  const results = {};
+
+  for (const platform of platforms) {
+    try {
+      const platformGuides = {
+        twitter: 'Write a tweet thread (3-5 tweets, each under 280 chars). First tweet must hook immediately. Last tweet links to project-grace.love.',
+        reddit: 'Write a Reddit post. Return ONLY valid JSON with "title" and "body" fields. Title should make people click. Body: 2-4 honest paragraphs. Mention project-grace.love naturally.',
+        linkedin: 'Write a LinkedIn post (1200-1500 chars). Bold first line. Professional but human. End with a question. Mention project-grace.love.',
+        bluesky: 'Write a Bluesky post (under 300 chars). Punchy and shareable. Include project-grace.love.'
+      };
+
+      const topicLine = topic ? `Topic: ${topic}` : 'Choose a resonant topic about AI, jobs, love, and the future.';
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 1024,
+        system: SOCIAL_PROMPT,
+        messages: [
+          { role: 'user', content: `Generate for ${platform}.\n\n${platformGuides[platform]}\n\n${topicLine}` }
+        ],
+      });
+
+      results[platform] = response.content[0].text;
+    } catch (err) {
+      results[platform] = 'Generation failed - try again.';
+    }
+  }
+
+  res.json({ results, topic: topic || 'auto' });
+});
+
 // ==================== STATS ====================
 app.get('/api/stats', (req, res) => {
   const loveLinks = db.getLoveChainCount();
