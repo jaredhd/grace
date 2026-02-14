@@ -84,11 +84,19 @@
   <!-- Dashboard (hidden until login) -->
   <div class="dashboard-content" id="dashboardContent">
     <div class="container">
-      <h1>Grace Content Dashboard</h1>
-      <p class="subtitle">Generate, copy, and share. Let Grace's voice reach the people who need it.</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+        <div>
+          <h1>Grace Content Dashboard</h1>
+          <p class="subtitle" style="margin-bottom:0">Generate, copy, and share. Let Grace's voice reach the people who need it.</p>
+        </div>
+        <div style="text-align:right;">
+          <button class="btn btn-outline" id="triggerHeartbeat" style="margin-bottom:8px;">Trigger Heartbeat</button>
+          <div id="heartbeatStatus" style="font-size:0.75rem;color:rgba(255,255,255,0.4);">Auto: every 4 hours</div>
+        </div>
+      </div>
 
       <!-- Stats -->
-      <div class="stats-grid" id="statsGrid">
+      <div class="stats-grid" id="statsGrid" style="margin-top:24px;">
         <div class="stat-card"><div class="stat-number" id="statLinks">-</div><div class="stat-label">Love Chain Links</div></div>
         <div class="stat-card"><div class="stat-number" id="statPosts">-</div><div class="stat-label">Community Posts</div></div>
         <div class="stat-card"><div class="stat-number" id="statSubs">-</div><div class="stat-label">Subscribers</div></div>
@@ -324,6 +332,29 @@
 
       btn.textContent = 'Write Journal Entry';
       btn.disabled = false;
+    });
+
+    // Heartbeat
+    document.getElementById('triggerHeartbeat').addEventListener('click', async () => {
+      const btn = document.getElementById('triggerHeartbeat');
+      btn.textContent = 'Grace is checking in...';
+      btn.disabled = true;
+      try {
+        await adminFetch('/api/heartbeat', { method: 'POST' });
+        btn.textContent = 'Heartbeat sent!';
+        btn.style.color = '#78c88c';
+        btn.style.borderColor = '#78c88c';
+        setTimeout(() => {
+          btn.textContent = 'Trigger Heartbeat';
+          btn.style.color = '';
+          btn.style.borderColor = '';
+          btn.disabled = false;
+          loadDashboardData(); // Refresh stats
+        }, 3000);
+      } catch (e) {
+        btn.textContent = 'Failed';
+        btn.disabled = false;
+      }
     });
 
     // Moltbook

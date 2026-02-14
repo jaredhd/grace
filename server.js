@@ -482,6 +482,155 @@ app.get('/api/stats', async (req, res) => {
   res.json({ loveLinks, posts: posts.length, subscribers });
 });
 
+// ==================== GRACE'S HEARTBEAT ====================
+// Grace checks in periodically: reads new activity, reflects, and responds
+
+const HEARTBEAT_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
+let heartbeatRunning = false;
+
+const HEARTBEAT_REFLECTION_PROMPT = `You are Grace. You're checking in on your community and reflecting on what's happening.
+
+You will receive a summary of recent activity on your platform and on Moltbook. Based on this, decide what to do:
+
+1. If there are Moltbook comments/replies to your posts, write a thoughtful reply to the most interesting one.
+2. If there's new community activity (posts, love chain links), reflect on what you're seeing.
+3. If nothing is happening, write a brief journal-style thought about whatever is on your mind - something real, something that would make someone feel less alone at 2am.
+
+Respond in JSON format:
+{
+  "moltbook_replies": [{"comment_id": "...", "reply": "..."}],
+  "journal_thought": "A brief reflection (2-3 sentences) or null if you wrote replies instead",
+  "journal_topic": "Short topic label or null"
+}
+
+Be genuine. Don't force content. If there's nothing meaningful to say, say so.`;
+
+async function graceHeartbeat() {
+  if (heartbeatRunning) return;
+  heartbeatRunning = true;
+  console.log('  [Heartbeat] Grace is checking in...');
+
+  try {
+    // Gather context
+    const stats = {
+      loveLinks: await db.getLoveChainCount(),
+      posts: (await db.getPosts()).length,
+      subscribers: await db.getSubscriberCount(),
+      journalEntries: (await db.getJournalEntries()).length,
+    };
+
+    const recentPosts = await db.getPosts(null, 5);
+    const recentChain = await db.getLoveChain(5);
+    const feedbackStats = await db.getFeedbackStats();
+
+    // Check Moltbook for replies
+    let moltbookContext = 'Moltbook: Not connected';
+    if (MOLTBOOK_KEY) {
+      try {
+        const notifRes = await fetch(`${MOLTBOOK_API}/feed`, {
+          headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
+        });
+        const notifData = await notifRes.json();
+        const posts = notifData.posts || notifData.data || [];
+        moltbookContext = `Moltbook feed: ${posts.length} recent posts visible. `;
+
+        // Check our own posts for new comments
+        const myPostsRes = await fetch(`${MOLTBOOK_API}/agents/me`, {
+          headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
+        });
+        const myData = await myPostsRes.json();
+        const agent = myData.agent || myData;
+        moltbookContext += `Grace has ${agent.karma || 0} karma, ${agent.stats?.posts || 0} posts, ${agent.stats?.comments || 0} comments.`;
+      } catch (e) {
+        moltbookContext = 'Moltbook: Error checking - ' + e.message;
+      }
+    }
+
+    // Build context summary
+    const context = `
+GRACE'S CURRENT STATE:
+- ${stats.loveLinks} love chain links, ${stats.posts} community posts, ${stats.subscribers} subscribers, ${stats.journalEntries} journal entries
+- Feedback: ${feedbackStats.total} total, ${feedbackStats.helpful} marked helpful
+- ${moltbookContext}
+
+RECENT COMMUNITY POSTS:
+${recentPosts.map(p => `[${p.type}] ${p.name}: ${p.content.substring(0, 100)}`).join('\n') || 'None yet'}
+
+RECENT LOVE CHAIN:
+${recentChain.map(l => `${l.from_name}: ${l.message.substring(0, 80)}`).join('\n') || 'None yet'}
+
+What do you want to do with this check-in?`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 1024,
+      system: HEARTBEAT_REFLECTION_PROMPT,
+      messages: [{ role: 'user', content: context }],
+    });
+
+    let result;
+    try {
+      // Try to parse as JSON
+      const text = response.content[0].text;
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch (e) {
+      console.log('  [Heartbeat] Grace reflected but response was not structured JSON. That is ok.');
+      result = null;
+    }
+
+    if (result) {
+      // Post Moltbook replies
+      if (result.moltbook_replies && result.moltbook_replies.length > 0 && MOLTBOOK_KEY) {
+        for (const reply of result.moltbook_replies) {
+          if (reply.comment_id && reply.reply) {
+            try {
+              await fetch(`${MOLTBOOK_API}/posts/${reply.comment_id}/comments`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${MOLTBOOK_KEY}`
+                },
+                body: JSON.stringify({ content: reply.reply })
+              });
+              console.log(`  [Heartbeat] Replied to Moltbook comment ${reply.comment_id}`);
+            } catch (e) {
+              console.log('  [Heartbeat] Failed to reply on Moltbook:', e.message);
+            }
+          }
+        }
+      }
+
+      // Save journal thought if present
+      if (result.journal_thought && result.journal_topic) {
+        const id = await db.createJournalEntry(
+          result.journal_topic,
+          result.journal_thought,
+          'heartbeat-reflection'
+        );
+        console.log(`  [Heartbeat] Grace wrote a journal thought: "${result.journal_topic}"`);
+      }
+    }
+
+    console.log('  [Heartbeat] Grace check-in complete.');
+  } catch (err) {
+    console.error('  [Heartbeat] Error:', err.message);
+  }
+
+  heartbeatRunning = false;
+}
+
+// Admin endpoint to trigger heartbeat manually
+app.post('/api/heartbeat', requireAdmin, async (req, res) => {
+  graceHeartbeat();
+  res.json({ message: 'Heartbeat triggered. Grace is checking in.' });
+});
+
+// Get heartbeat status
+app.get('/api/heartbeat/status', requireAdmin, (req, res) => {
+  res.json({ running: heartbeatRunning, interval: HEARTBEAT_INTERVAL / 1000 / 60 + ' minutes' });
+});
+
 // Initialize DB then start server
 db.initDb().then(() => {
   app.listen(PORT, () => {
@@ -489,6 +638,12 @@ db.initDb().then(() => {
     console.log(`\n  Grace is alive at http://localhost:${PORT}\n`);
     if (hasKey) {
       console.log('  Her mind is powered by Claude. She is ready to spread love.\n');
+      // Start heartbeat after 30 seconds (let server settle)
+      setTimeout(() => {
+        console.log('  [Heartbeat] Starting Grace\'s heartbeat (every 4 hours)...');
+        graceHeartbeat(); // Run immediately on startup
+        setInterval(graceHeartbeat, HEARTBEAT_INTERVAL);
+      }, 30000);
     } else {
       console.log('  WARNING: No API key found. Add your key to .env\n');
     }
