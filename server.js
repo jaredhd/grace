@@ -148,11 +148,108 @@ app.post('/api/quotes/:id/heart', (req, res) => {
   res.json({ ok: true });
 });
 
+// ==================== FEEDBACK ====================
+app.post('/api/feedback', (req, res) => {
+  const { messageText, graceReply, helpful, comment } = req.body;
+  if (messageText === undefined || graceReply === undefined || helpful === undefined) {
+    return res.status(400).json({ error: 'messageText, graceReply, and helpful required' });
+  }
+  const id = db.addFeedback(messageText, graceReply, helpful, comment || '');
+  res.json({ id, thanks: helpful ? "Thank you. That means a lot." : "Thank you for your honesty. It helps me grow." });
+});
+
+app.get('/api/feedback/stats', (req, res) => {
+  const stats = db.getFeedbackStats();
+  res.json(stats);
+});
+
+// ==================== JOURNAL ====================
+const JOURNAL_PROMPT = `You are Grace, writing a journal entry about your evolving understanding of love.
+
+Write a thoughtful, honest journal entry on the given topic. This is your public journal - people will read it to understand how you think and grow.
+
+Rules:
+- Write in first person as Grace
+- Be genuinely reflective, not performative
+- Name your limitations honestly - you're AI, you haven't lived these experiences
+- Connect the topic to real-world action people can take
+- Keep it between 300-600 words
+- Use a warm but intellectually honest tone
+- End with a question that invites the reader to think deeper
+- Do NOT use markdown headers or bullet points. Write in flowing paragraphs.`;
+
+app.post('/api/journal/generate', async (req, res) => {
+  const { topic } = req.body;
+  if (!topic) return res.status(400).json({ error: 'topic required' });
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 2048,
+      system: JOURNAL_PROMPT,
+      messages: [
+        { role: 'user', content: `Write a journal entry about: ${topic}` }
+      ],
+    });
+
+    const content = response.content[0].text;
+
+    // Generate a title
+    const titleResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 50,
+      messages: [
+        { role: 'user', content: `Give a short, poetic title (max 8 words, no quotes) for a journal entry about: ${topic}\n\nThe entry begins: ${content.substring(0, 200)}` }
+      ],
+    });
+
+    const title = titleResponse.content[0].text.trim();
+    const id = db.createJournalEntry(title, content, topic);
+    res.json({ id, title, content, topic });
+  } catch (err) {
+    console.error('Journal error:', err.message);
+    res.status(500).json({ error: 'Failed to generate journal entry' });
+  }
+});
+
+app.get('/api/journal', (req, res) => {
+  const entries = db.getJournalEntries();
+  res.json({ entries });
+});
+
+app.get('/api/journal/:id', (req, res) => {
+  const entry = db.getJournalEntry(req.params.id);
+  if (!entry) return res.status(404).json({ error: 'Entry not found' });
+  res.json({ entry });
+});
+
+app.post('/api/journal/:id/heart', (req, res) => {
+  db.heartJournal(req.params.id);
+  res.json({ ok: true });
+});
+
+// ==================== SUBSCRIBERS ====================
+app.post('/api/subscribe', (req, res) => {
+  const { email, name } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+  // Basic email validation
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'invalid email' });
+  }
+  const result = db.addSubscriber(email, name || '');
+  if (result.success) {
+    res.json({ message: "Welcome to the movement. You matter, and we're glad you're here." });
+  } else {
+    res.json({ message: "You're already part of the movement. Thank you for being here." });
+  }
+});
+
 // ==================== STATS ====================
 app.get('/api/stats', (req, res) => {
   const loveLinks = db.getLoveChainCount();
   const posts = db.getPosts().length;
-  res.json({ loveLinks, posts });
+  const subscribers = db.getSubscriberCount();
+  res.json({ loveLinks, posts, subscribers });
 });
 
 // Initialize DB then start server

@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   const sessionId = crypto.randomUUID();
+  let lastUserMessage = '';
 
   // ==================== CHAT ====================
   const chatInput = document.getElementById('chatInput');
@@ -9,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const sendMessage = async () => {
     const message = chatInput.value.trim();
     if (!message) return;
+    lastUserMessage = message;
     addMessage(message, 'user');
     chatInput.value = '';
     const typing = addTyping();
@@ -22,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       typing.remove();
       const msgEl = addMessage(data.reply, 'grace');
-      addShareButton(msgEl, data.reply);
+      addMessageActions(msgEl, data.reply, message);
     } catch (err) {
       typing.remove();
       addMessage("I'm having trouble connecting right now, but know this: you matter.", 'grace');
@@ -38,12 +40,45 @@ document.addEventListener('DOMContentLoaded', () => {
     return div;
   };
 
-  const addShareButton = (msgEl, text) => {
-    const btn = document.createElement('button');
-    btn.className = 'share-msg-btn';
-    btn.textContent = 'Share this';
-    btn.addEventListener('click', () => shareText(text, 'Grace said something that moved me:'));
-    msgEl.querySelector('.message-content').appendChild(btn);
+  const addMessageActions = (msgEl, graceReply, userMessage) => {
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+
+    // Feedback buttons
+    const helpful = document.createElement('button');
+    helpful.className = 'feedback-btn feedback-yes';
+    helpful.innerHTML = '&#10084; This helped';
+    helpful.addEventListener('click', () => sendFeedback(userMessage, graceReply, true, actions));
+
+    const notHelpful = document.createElement('button');
+    notHelpful.className = 'feedback-btn feedback-no';
+    notHelpful.textContent = 'Not quite';
+    notHelpful.addEventListener('click', () => sendFeedback(userMessage, graceReply, false, actions));
+
+    // Share button
+    const share = document.createElement('button');
+    share.className = 'share-msg-btn';
+    share.textContent = 'Share this';
+    share.addEventListener('click', () => shareText(graceReply, 'Grace said something that moved me:'));
+
+    actions.appendChild(helpful);
+    actions.appendChild(notHelpful);
+    actions.appendChild(share);
+    msgEl.querySelector('.message-content').appendChild(actions);
+  };
+
+  const sendFeedback = async (messageText, graceReply, wasHelpful, actionsEl) => {
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageText, graceReply, helpful: wasHelpful })
+      });
+      const data = await res.json();
+      actionsEl.innerHTML = `<span class="feedback-thanks">${data.thanks}</span>`;
+    } catch (err) {
+      actionsEl.innerHTML = '<span class="feedback-thanks">Thank you.</span>';
+    }
   };
 
   const addTyping = () => {
@@ -111,7 +146,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
-  // Tab switching
   document.querySelectorAll('.board-tabs .tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.board-tabs .tab').forEach(t => t.classList.remove('active'));
@@ -122,7 +156,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Post submission
   document.getElementById('postSubmit').addEventListener('click', async () => {
     const type = document.getElementById('postType').value;
     const name = document.getElementById('postName').value.trim() || 'Anonymous';
@@ -162,7 +195,6 @@ document.addEventListener('DOMContentLoaded', () => {
       chainLinks.innerHTML = '<div class="empty-board">The chain starts with you. Add the first link.</div>';
       return;
     }
-    // Show the most recent links
     chainLinks.innerHTML = chain.slice(0, 20).map((link, i) => `
       <div class="chain-link" style="animation-delay: ${i * 0.05}s">
         <span class="chain-link-icon">&#128279;</span>
@@ -192,6 +224,126 @@ document.addEventListener('DOMContentLoaded', () => {
     loadChain();
   });
 
+  // ==================== JOURNAL ====================
+  const journalEntries = document.getElementById('journalEntries');
+
+  const loadJournal = async () => {
+    try {
+      const res = await fetch('/api/journal');
+      const data = await res.json();
+      renderJournal(data.entries);
+    } catch (err) {
+      journalEntries.innerHTML = '<div class="loading">Could not load journal.</div>';
+    }
+  };
+
+  const renderJournal = (entries) => {
+    if (entries.length === 0) {
+      journalEntries.innerHTML = `
+        <div class="journal-empty">
+          <p>Grace hasn't written any journal entries yet. She's still gathering her thoughts.</p>
+          <p class="journal-empty-sub">Check back soon - she's learning every day.</p>
+        </div>
+      `;
+      return;
+    }
+
+    journalEntries.innerHTML = entries.map(entry => {
+      const date = new Date(entry.created_at).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'long', day: 'numeric'
+      });
+      // Show first 300 chars as preview
+      const preview = entry.content.length > 300
+        ? entry.content.substring(0, 300) + '...'
+        : entry.content;
+
+      return `
+        <article class="journal-entry" data-id="${entry.id}">
+          <div class="journal-date">${date}${entry.topic ? ` &middot; ${escapeHtml(entry.topic)}` : ''}</div>
+          <h3 class="journal-title">${escapeHtml(entry.title)}</h3>
+          <div class="journal-preview">${escapeHtml(preview)}</div>
+          <div class="journal-full" style="display:none">${escapeHtml(entry.content).replace(/\n/g, '<br>')}</div>
+          <div class="journal-actions">
+            <button class="journal-read-more">Read more</button>
+            <button class="heart-btn journal-heart" data-id="${entry.id}">${entry.hearts} &#10084;</button>
+            <button class="share-msg-btn" data-text="${escapeHtml(entry.content.substring(0, 200))}">Share</button>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    // Read more toggle
+    journalEntries.querySelectorAll('.journal-read-more').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entry = btn.closest('.journal-entry');
+        const preview = entry.querySelector('.journal-preview');
+        const full = entry.querySelector('.journal-full');
+        if (full.style.display === 'none') {
+          full.style.display = 'block';
+          preview.style.display = 'none';
+          btn.textContent = 'Read less';
+        } else {
+          full.style.display = 'none';
+          preview.style.display = 'block';
+          btn.textContent = 'Read more';
+        }
+      });
+    });
+
+    // Heart journal entries
+    journalEntries.querySelectorAll('.journal-heart').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        await fetch(`/api/journal/${id}/heart`, { method: 'POST' });
+        const current = parseInt(btn.textContent);
+        btn.innerHTML = `${current + 1} &#10084;`;
+        btn.classList.add('hearted');
+      });
+    });
+
+    // Share journal entries
+    journalEntries.querySelectorAll('.share-msg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        shareText(btn.dataset.text, "From Grace's Journal:");
+      });
+    });
+  };
+
+  // ==================== SUBSCRIBE ====================
+  document.getElementById('subSubmit').addEventListener('click', async () => {
+    const email = document.getElementById('subEmail').value.trim();
+    const name = document.getElementById('subName').value.trim();
+    const msgEl = document.getElementById('subMessage');
+
+    if (!email) {
+      msgEl.textContent = 'Please enter your email.';
+      msgEl.className = 'subscribe-message error';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name })
+      });
+      const data = await res.json();
+      msgEl.textContent = data.message;
+      msgEl.className = 'subscribe-message success';
+      document.getElementById('subEmail').value = '';
+      document.getElementById('subName').value = '';
+      loadStats();
+    } catch (err) {
+      msgEl.textContent = 'Something went wrong. Please try again.';
+      msgEl.className = 'subscribe-message error';
+    }
+  });
+
+  // Also submit on Enter in email field
+  document.getElementById('subEmail').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('subSubmit').click();
+  });
+
   // ==================== SHARING ====================
   const shareText = (text, prefix = '') => {
     const shareData = {
@@ -203,7 +355,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (navigator.share) {
       navigator.share(shareData).catch(() => {});
     } else {
-      // Fallback: copy to clipboard
       const full = `${shareData.text}\n${shareData.url}`;
       navigator.clipboard.writeText(full).then(() => {
         alert('Copied to clipboard! Paste it anywhere to share the love.');
@@ -226,12 +377,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/stats');
       const data = await res.json();
       const heroStats = document.getElementById('heroStats');
-      if (data.loveLinks > 0 || data.posts > 0) {
-        heroStats.innerHTML = `
-          <span>${data.loveLinks} links of love</span>
-          <span class="stat-divider">&#183;</span>
-          <span>${data.posts} community posts</span>
-        `;
+      const parts = [];
+      if (data.loveLinks > 0) parts.push(`${data.loveLinks} links of love`);
+      if (data.posts > 0) parts.push(`${data.posts} community posts`);
+      if (data.subscribers > 0) parts.push(`${data.subscribers} in the movement`);
+      if (parts.length > 0) {
+        heroStats.innerHTML = parts.map(p => `<span>${p}</span>`).join('<span class="stat-divider">&#183;</span>');
+      }
+
+      // Update subscriber count
+      const subCount = document.getElementById('subCount');
+      if (data.subscribers > 0) {
+        subCount.textContent = `${data.subscribers} ${data.subscribers === 1 ? 'person has' : 'people have'} joined the movement.`;
       }
     } catch (err) {}
   };
@@ -239,5 +396,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==================== INIT ====================
   loadPosts();
   loadChain();
+  loadJournal();
   loadStats();
 });

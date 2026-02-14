@@ -51,6 +51,37 @@ const initDb = async () => {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id TEXT PRIMARY KEY,
+      message_text TEXT NOT NULL,
+      grace_reply TEXT NOT NULL,
+      helpful INTEGER NOT NULL,
+      comment TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS journal (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      topic TEXT DEFAULT '',
+      hearts INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS subscribers (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   save();
   return db;
 };
@@ -144,5 +175,61 @@ module.exports = {
 
   getTopQuotes: (limit = 20) => {
     return all('SELECT * FROM grace_quotes ORDER BY hearts DESC, created_at DESC LIMIT ?', [limit]);
+  },
+
+  // Feedback
+  addFeedback: (messageText, graceReply, helpful, comment = '') => {
+    const id = uuid();
+    run('INSERT INTO feedback (id, message_text, grace_reply, helpful, comment) VALUES (?, ?, ?, ?, ?)',
+      [id, messageText, graceReply, helpful ? 1 : 0, comment]);
+    return id;
+  },
+
+  getFeedbackStats: () => {
+    const total = get('SELECT COUNT(*) as count FROM feedback');
+    const helpful = get('SELECT COUNT(*) as count FROM feedback WHERE helpful = 1');
+    const recent = all('SELECT * FROM feedback ORDER BY created_at DESC LIMIT 20');
+    return {
+      total: total ? total.count : 0,
+      helpful: helpful ? helpful.count : 0,
+      recent
+    };
+  },
+
+  // Journal
+  createJournalEntry: (title, content, topic = '') => {
+    const id = uuid();
+    run('INSERT INTO journal (id, title, content, topic) VALUES (?, ?, ?, ?)',
+      [id, title, content, topic]);
+    return id;
+  },
+
+  getJournalEntries: (limit = 20) => {
+    return all('SELECT * FROM journal ORDER BY created_at DESC LIMIT ?', [limit]);
+  },
+
+  getJournalEntry: (id) => {
+    return get('SELECT * FROM journal WHERE id = ?', [id]);
+  },
+
+  heartJournal: (id) => {
+    run('UPDATE journal SET hearts = hearts + 1 WHERE id = ?', [id]);
+  },
+
+  // Subscribers
+  addSubscriber: (email, name = '') => {
+    try {
+      const id = uuid();
+      run('INSERT INTO subscribers (id, email, name) VALUES (?, ?, ?)', [id, email, name]);
+      return { id, success: true };
+    } catch (err) {
+      // Duplicate email
+      return { success: false, error: 'already_subscribed' };
+    }
+  },
+
+  getSubscriberCount: () => {
+    const result = get('SELECT COUNT(*) as count FROM subscribers');
+    return result ? result.count : 0;
   },
 };

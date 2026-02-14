@@ -714,6 +714,195 @@ body {
   border-color: rgba(255,255,255,0.5);
 }
 
+/* Chat Feedback */
+.message-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.feedback-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.5);
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.2s;
+}
+
+.feedback-yes:hover {
+  border-color: #78c88c;
+  color: #78c88c;
+}
+
+.feedback-no:hover {
+  border-color: #e87878;
+  color: #e87878;
+}
+
+.message-actions .share-msg-btn {
+  display: inline;
+  margin-top: 0;
+}
+
+.feedback-thanks {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-style: italic;
+}
+
+/* Journal */
+.journal-entries {
+  max-width: 700px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.journal-entry {
+  background: rgba(255,255,255,0.05);
+  padding: 32px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.journal-date {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.journal-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  margin-bottom: 16px;
+  color: var(--white);
+}
+
+.journal-preview,
+.journal-full {
+  color: rgba(255,255,255,0.75);
+  line-height: 1.9;
+  font-size: 0.95rem;
+}
+
+.journal-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  align-items: center;
+}
+
+.journal-read-more {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: 'Inter', sans-serif;
+  padding: 0;
+  transition: opacity 0.2s;
+}
+
+.journal-read-more:hover {
+  opacity: 0.7;
+}
+
+.journal-actions .heart-btn {
+  color: rgba(255,255,255,0.5);
+}
+
+.journal-actions .share-msg-btn {
+  display: inline;
+  margin-top: 0;
+}
+
+.journal-empty {
+  text-align: center;
+  padding: 40px;
+  color: rgba(255,255,255,0.6);
+}
+
+.journal-empty-sub {
+  color: rgba(255,255,255,0.4);
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
+/* Subscribe / Join */
+.section-join {
+  background: linear-gradient(160deg, var(--accent) 0%, var(--rose) 100%);
+  color: var(--dark);
+}
+
+.section-join h2 {
+  color: var(--dark);
+}
+
+.section-sub-dark {
+  text-align: center;
+  color: rgba(0,0,0,0.6);
+  font-size: 1.1rem;
+  max-width: 600px;
+  margin: 0 auto 32px;
+}
+
+.subscribe-form {
+  display: flex;
+  gap: 12px;
+  max-width: 600px;
+  margin: 0 auto;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.subscribe-form input {
+  flex: 1;
+  min-width: 180px;
+  padding: 14px 20px;
+  border: 2px solid rgba(0,0,0,0.1);
+  border-radius: 28px;
+  background: var(--white);
+  font-size: 1rem;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.subscribe-form input:focus {
+  border-color: var(--dark);
+}
+
+.subscribe-message {
+  text-align: center;
+  margin-top: 16px;
+  font-size: 0.95rem;
+}
+
+.subscribe-message.success {
+  color: var(--dark);
+  font-weight: 600;
+}
+
+.subscribe-message.error {
+  color: #8b0000;
+}
+
+.subscribe-count {
+  text-align: center;
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: rgba(0,0,0,0.5);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .nav-links {
