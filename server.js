@@ -509,7 +509,17 @@ app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
       body: JSON.stringify({ content: postContent, type: 'text' })
     });
     const data = await response.json();
-    res.json({ success: response.ok, post: data, content: postContent });
+    if (!response.ok) {
+      // Pass through Moltbook's error details (rate limits, etc.)
+      return res.json({
+        success: false,
+        error: data.error || 'Post failed',
+        hint: data.hint || '',
+        retry_after_minutes: data.retry_after_minutes || null,
+        content: postContent
+      });
+    }
+    res.json({ success: true, post: data, content: postContent });
   } catch (err) {
     res.status(500).json({ error: 'Failed to post to Moltbook: ' + err.message });
   }

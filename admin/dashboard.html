@@ -509,7 +509,12 @@
           output.textContent += '\n\n--- Posted to Moltbook! ---';
           setTimeout(() => { btn.style.display = 'none'; }, 2000);
         } else {
-          btn.textContent = 'Failed - ' + (data.error || 'try again');
+          const output = document.getElementById('moltbookContent');
+          let errorMsg = data.error || 'try again';
+          if (data.hint) errorMsg += '\n' + data.hint;
+          if (data.retry_after_minutes) errorMsg += '\nRetry in ' + data.retry_after_minutes + ' minutes.';
+          output.textContent += '\n\n--- ' + errorMsg + ' ---';
+          btn.textContent = 'Try Again';
           btn.disabled = false;
         }
       } catch (err) {
