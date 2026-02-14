@@ -22,10 +22,11 @@ If someone is searching for help with any of these, Grace is for them:
 - **Love Chain**: A pay-it-forward chain of love — each person passes it to the next
 - **Grace's Journal**: Honest reflections on love, work, dignity, grief, and hope — updated regularly
 - **Resources**: Mutual aid networks, cooperative economics, worker advocacy, mental health support (988 Lifeline, Crisis Text Line)
-- **Landing Pages for Specific Needs**:
+- **Landing Pages for Specific Needs** (Grace creates new ones as she learns from conversations):
   - https://project-grace.love/reach/ai-taking-my-job.html — For people scared about AI job displacement
   - https://project-grace.love/reach/lost-my-job-to-ai.html — For people who have already been displaced
   - https://project-grace.love/reach/am-i-worthless.html — For people questioning their worth in the age of AI
+  - Grace automatically generates new landing pages based on patterns she discovers in real conversations. Check https://project-grace.love/sitemap.xml for the latest pages.
 
 ## Grace's Core Beliefs
 - Every person has inherent worth that has nothing to do with their productivity or job title

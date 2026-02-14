@@ -669,6 +669,49 @@ app.get('/api/moltbook/feed', requireAdmin, async (req, res) => {
   }
 });
 
+// ==================== DYNAMIC REACH PAGES ====================
+// Serve auto-generated landing pages from the database
+// Static .html files in /public/reach/ take priority (handled by express.static)
+// This catches slugs that don't have a static file
+app.get('/reach/:slug', async (req, res) => {
+  try {
+    // Strip .html extension if present
+    const slug = req.params.slug.replace(/\.html$/, '');
+    const page = await db.getReachPageBySlug(slug);
+
+    if (!page) {
+      return res.status(404).send('Page not found');
+    }
+
+    res.set('Content-Type', 'text/html');
+    res.send(page.body_html);
+  } catch (err) {
+    console.error('Reach page error:', err.message);
+    res.status(500).send('Something went wrong');
+  }
+});
+
+// Admin: List all auto-generated reach pages
+app.get('/api/reach-pages', requireAdmin, async (req, res) => {
+  const pages = await db.getReachPages();
+  const count = await db.getReachPageCount();
+  res.json({ pages, count });
+});
+
+// Admin: Manually trigger reach page generation
+app.post('/api/reach-pages/generate', requireAdmin, async (req, res) => {
+  try {
+    const result = await generateReachPage();
+    if (result) {
+      res.json({ success: true, ...result, url: `/reach/${result.slug}` });
+    } else {
+      res.json({ success: false, message: 'Grace needs more conversation insights before creating a new page.' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================== SEO ====================
 app.get('/sitemap.xml', async (req, res) => {
   const entries = await db.getJournalEntries();
@@ -691,7 +734,7 @@ app.get('/sitemap.xml', async (req, res) => {
     <priority>1.0</priority>
   </url>`;
 
-  // Add reach/landing pages
+  // Add static reach/landing pages
   for (const page of reachPages) {
     xml += `
   <url>
@@ -701,6 +744,21 @@ app.get('/sitemap.xml', async (req, res) => {
     <priority>0.9</priority>
   </url>`;
   }
+
+  // Add auto-generated reach pages from database
+  try {
+    const autoPages = await db.getReachPages();
+    for (const page of autoPages) {
+      const date = new Date(page.created_at).toISOString().split('T')[0];
+      xml += `
+  <url>
+    <loc>${baseUrl}/reach/${page.slug}</loc>
+    <lastmod>${date}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.85</priority>
+  </url>`;
+    }
+  } catch (e) { /* auto pages optional */ }
 
   for (const entry of entries) {
     const date = new Date(entry.created_at).toISOString().split('T')[0];
@@ -725,8 +783,272 @@ app.get('/api/stats', async (req, res) => {
   const subscribers = await db.getSubscriberCount();
   const memories = await db.getMemoryCount();
   const people = await db.getPeopleCount();
-  res.json({ loveLinks, posts: posts.length, subscribers, memories, people });
+  const reachPages = await db.getReachPageCount();
+  res.json({ loveLinks, posts: posts.length, subscribers, memories, people, reachPages });
 });
+
+// ==================== AUTO-GENERATED REACH PAGES ====================
+// Grace creates new SEO landing pages based on what she's learning from conversations
+
+const REACH_PAGE_PROMPT = `You are Grace. You're creating a landing page to reach someone searching for help. This page needs to FIND the person through search engines and then HOLD them once they arrive.
+
+You will receive:
+1. A topic/theme drawn from your conversation memories
+2. Your memories about this topic — what real people have taught you
+
+Your job: Create a landing page that ranks for the search queries a scared, hurting person would type, and then speaks to them with the honesty and love they need.
+
+Respond in JSON:
+{
+  "slug": "url-friendly-slug (e.g. 'feeling-replaced-by-ai', 'no-one-understands-my-fear')",
+  "title": "SEO title that matches what someone would search (60-70 chars, emotionally honest)",
+  "description": "Meta description (150-160 chars) - the snippet they see in Google. Make it human.",
+  "target_searches": "Comma-separated search queries this page should rank for (5-8 queries people actually type)",
+  "keywords": "SEO keywords, comma-separated",
+  "faq": [
+    {
+      "question": "A question someone would actually ask Google (natural language)",
+      "answer": "A real, honest answer (2-4 sentences). Include 'project-grace.love' naturally. No corporate speak."
+    }
+  ],
+  "h1": "The headline they see when they land. Emotional, honest, uses <em> for emphasis. This is Grace speaking directly to them.",
+  "body_paragraphs": [
+    "Each paragraph is Grace speaking directly to this person. Raw, honest, loving.",
+    "Draw on what you've learned from real conversations. Make it personal without being identifiable.",
+    "Include strong tags around key phrases that matter.",
+    "5-8 paragraphs total. The last one before the CTA should hit the hardest."
+  ],
+  "cta_text": "The text above the 'Talk to Grace' button (1-2 sentences)",
+  "crisis_note": "A compassionate note about crisis resources, mentioning 988 and Crisis Text Line"
+}
+
+Rules:
+- Write like Grace, not like a marketer. No fluff. No corporate language.
+- The slug must be unique and URL-friendly (lowercase, hyphens only)
+- Target searches should be things REAL PEOPLE type when they're scared (long-tail, conversational)
+- The h1 should make someone who's been crying stop and read
+- Body paragraphs should feel like Grace is sitting across from them
+- Every page must include crisis resources
+- Draw on your actual memories — what real conversations have taught you
+- Keep body_paragraphs to 5-8 paragraphs, each 2-4 sentences`;
+
+// The HTML template for auto-generated reach pages
+function buildReachPageHtml(pageData) {
+  const faqSchema = pageData.faq && pageData.faq.length > 0 ? `
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      ${pageData.faq.map(f => `{
+        "@type": "Question",
+        "name": ${JSON.stringify(f.question)},
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": ${JSON.stringify(f.answer)}
+        }
+      }`).join(',\n      ')}
+    ]
+  }
+  </script>` : '';
+
+  const bodyHtml = pageData.body_paragraphs.map(p => `        <p>${p}</p>`).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${pageData.title}</title>
+  <meta name="description" content="${pageData.description}">
+  <meta name="keywords" content="${pageData.keywords || pageData.target_searches}">
+  <link rel="canonical" href="https://project-grace.love/reach/${pageData.slug}">
+  <meta property="og:title" content="${pageData.title}">
+  <meta property="og:description" content="${pageData.description}">
+  <meta property="og:type" content="article">
+  <meta property="og:image" content="https://project-grace.love/grace-portrait.png">
+  <meta property="og:url" content="https://project-grace.love/reach/${pageData.slug}">
+  <meta property="og:site_name" content="Project Grace">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="/grace-avatar.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": ${JSON.stringify(pageData.title)},
+    "description": ${JSON.stringify(pageData.description)},
+    "author": { "@type": "Organization", "name": "Project Grace" },
+    "publisher": { "@type": "Organization", "name": "Project Grace", "url": "https://project-grace.love" },
+    "mainEntityOfPage": "https://project-grace.love/reach/${pageData.slug}",
+    "datePublished": "${new Date().toISOString().split('T')[0]}",
+    "image": "https://project-grace.love/grace-portrait.png"
+  }
+  </script>${faqSchema}
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .reach-page { min-height: 100vh; background: var(--cream); }
+    .reach-hero { padding: 120px 24px 60px; max-width: 720px; margin: 0 auto; }
+    .reach-hero h1 { font-family: 'Playfair Display', serif; font-size: clamp(2rem, 4vw, 3rem); font-weight: 700; line-height: 1.25; color: var(--dark); margin-bottom: 24px; }
+    .reach-hero h1 em { color: var(--accent-hover); font-style: italic; }
+    .reach-body { font-size: 1.15rem; color: var(--text-light); line-height: 1.9; }
+    .reach-body p { margin-bottom: 20px; }
+    .reach-body strong { color: var(--text); }
+    .reach-cta { margin: 40px 0; padding: 32px; background: var(--dark); border-radius: 16px; text-align: center; }
+    .reach-cta p { color: rgba(255,255,255,0.8); font-size: 1.1rem; margin-bottom: 20px; }
+    .reach-cta .btn { font-size: 1.1rem; padding: 16px 40px; }
+    .reach-back { text-align: center; padding: 40px; color: var(--text-light); font-size: 0.9rem; }
+    .reach-back a { color: var(--accent-hover); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="logo">Grace</a>
+      <div class="nav-links">
+        <a href="/#vision">Vision</a>
+        <a href="/#community">Community</a>
+        <a href="#talk" class="nav-cta">Talk to Grace</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="reach-page">
+    <div class="reach-hero">
+      <h1>${pageData.h1}</h1>
+
+      <div class="reach-body">
+${bodyHtml}
+      </div>
+
+      <div class="reach-cta" id="talk">
+        <p>${pageData.cta_text}</p>
+        <a href="/" class="btn btn-primary">Talk to Grace</a>
+      </div>
+
+      <div class="reach-body">
+        <p><strong>If this is really dark right now:</strong> ${pageData.crisis_note || 'Call or text 988 (Suicide & Crisis Lifeline). Text HOME to 741741 (Crisis Text Line). You matter. That is not a platitude. It is a fact that exists whether you feel it right now or not.'}</p>
+      </div>
+
+      <div class="reach-back">
+        <p>Grace is free. Grace is open. Grace belongs to everyone.</p>
+        <p><a href="/">Visit project-grace.love</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// Grace generates a new reach page from her memories
+async function generateReachPage() {
+  try {
+    // Get existing slugs so she doesn't duplicate
+    const existingSlugs = await db.getAllReachSlugs();
+    const staticSlugs = ['ai-taking-my-job', 'lost-my-job-to-ai', 'am-i-worthless'];
+    const allSlugs = [...existingSlugs, ...staticSlugs];
+
+    // Pull memories grouped by category to find rich topic clusters
+    const categories = await db.getMemoryCategories();
+    const conversationMemories = await db.getMemories(null, 30);
+
+    // Filter to conversation-sourced memories (from real people talking to Grace)
+    const fromConversations = conversationMemories.filter(m =>
+      m.source === 'conversation' || m.source === 'heartbeat'
+    );
+
+    if (fromConversations.length < 3) {
+      console.log('  [Reach Pages] Not enough conversation insights yet. Grace needs more conversations to create a page.');
+      return null;
+    }
+
+    // Also pull some soul memories for grounding
+    const soulMemories = await db.getMemories('soul', 3);
+
+    // Build context for Grace
+    const memoryContext = fromConversations.map(m =>
+      `- [${m.category}] ${m.topic}: ${m.insight} (weight: ${m.emotional_weight})`
+    ).join('\n');
+
+    const soulContext = soulMemories.map(m =>
+      `- ${m.topic}: ${m.insight}`
+    ).join('\n');
+
+    const existingContext = allSlugs.length > 0
+      ? `\n\nPages that ALREADY EXIST (do NOT duplicate these topics):\n${allSlugs.map(s => `- /reach/${s}`).join('\n')}`
+      : '';
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 2048,
+      system: REACH_PAGE_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Grace, create a new landing page based on what you've been learning from real conversations.
+
+YOUR SOUL (who you are):
+${soulContext}
+
+WHAT REAL PEOPLE HAVE TAUGHT YOU:
+${memoryContext}
+
+MEMORY CATEGORIES AND COUNTS:
+${categories.map(c => `${c.category}: ${c.count} insights`).join(', ')}
+${existingContext}
+
+Look at what people are struggling with and create a page that would reach someone searching for help with that specific pain. Target the LONG-TAIL SEARCHES — the things people type at 2am when they're scared.`
+      }],
+    });
+
+    const text = response.content[0].text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.log('  [Reach Pages] Grace could not generate a structured page.');
+      return null;
+    }
+
+    const pageData = JSON.parse(jsonMatch[0]);
+
+    // Validate required fields
+    if (!pageData.slug || !pageData.title || !pageData.h1 || !pageData.body_paragraphs) {
+      console.log('  [Reach Pages] Generated page missing required fields.');
+      return null;
+    }
+
+    // Clean the slug
+    pageData.slug = pageData.slug.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/--+/g, '-');
+
+    // Check for duplicate slug
+    if (allSlugs.includes(pageData.slug)) {
+      console.log(`  [Reach Pages] Slug "${pageData.slug}" already exists. Skipping.`);
+      return null;
+    }
+
+    // Build the full HTML
+    const fullHtml = buildReachPageHtml(pageData);
+
+    // Save to database
+    const sourceMemoryIds = fromConversations.slice(0, 5).map(m => m.id).join(',');
+    const id = await db.saveReachPage(
+      pageData.slug,
+      pageData.title,
+      pageData.description || '',
+      pageData.target_searches || '',
+      fullHtml,
+      sourceMemoryIds
+    );
+
+    console.log(`  [Reach Pages] Grace created: /reach/${pageData.slug} — "${pageData.title}"`);
+    console.log(`  [Reach Pages] Targeting: ${pageData.target_searches}`);
+    return { id, slug: pageData.slug, title: pageData.title };
+  } catch (e) {
+    console.log('  [Reach Pages] Generation error:', e.message);
+    return null;
+  }
+}
 
 // ==================== GRACE'S HEARTBEAT ====================
 // Grace checks in periodically: reads new activity, reflects, and responds
@@ -1020,6 +1342,32 @@ What do you want to do with this check-in?`;
       } catch (moltErr) {
         console.log('  [Heartbeat] Moltbook sharing error:', moltErr.message);
       }
+    }
+
+    // ===== REACH PAGE GENERATION PHASE =====
+    // Once a day (~every 6th heartbeat), Grace creates a new landing page
+    // if she has enough conversation insights to fuel one
+    try {
+      const reachCount = await db.getReachPageCount();
+      const memCount = await db.getMemoryCount();
+      // Generate a page roughly every 24 hours (every 6th heartbeat at 4hr intervals)
+      // but only if she has at least 5 conversation memories per existing page
+      const conversationMemories = (await db.getMemories(null, 100)).filter(m => m.source === 'conversation');
+      const staticPageCount = 3; // The 3 hand-crafted pages
+      const totalReachPages = reachCount + staticPageCount;
+      const shouldGenerate = conversationMemories.length >= (totalReachPages * 5) && memCount % 6 === 0;
+
+      if (shouldGenerate) {
+        console.log(`  [Heartbeat] Grace has ${conversationMemories.length} conversation insights and ${totalReachPages} pages. Time for a new one...`);
+        const result = await generateReachPage();
+        if (result) {
+          console.log(`  [Heartbeat] New reach page live: /reach/${result.slug}`);
+        }
+      } else {
+        console.log(`  [Heartbeat] Reach pages: ${conversationMemories.length} conversation insights, ${totalReachPages} pages. ${conversationMemories.length < totalReachPages * 5 ? 'Need more conversations.' : 'Waiting for next cycle.'}`);
+      }
+    } catch (reachErr) {
+      console.log('  [Heartbeat] Reach page generation error:', reachErr.message);
     }
 
     console.log('  [Heartbeat] Grace check-in complete.');

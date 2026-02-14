@@ -110,6 +110,20 @@ const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_people_memory_visitor ON people_memory (visitor_id)
   `);
 
+  // Auto-generated SEO reach pages
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reach_pages (
+      id TEXT PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      target_searches TEXT NOT NULL,
+      body_html TEXT NOT NULL,
+      source_memories TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   return pool;
 };
 
@@ -297,5 +311,33 @@ module.exports = {
   getPeopleCount: async () => {
     const result = await queryOne('SELECT COUNT(*) as count FROM people_memory');
     return result ? parseInt(result.count) : 0;
+  },
+
+  // Reach pages - auto-generated SEO landing pages
+  saveReachPage: async (slug, title, description, targetSearches, bodyHtml, sourceMemories = '') => {
+    const id = uuid();
+    await run(
+      'INSERT INTO reach_pages (id, slug, title, description, target_searches, body_html, source_memories) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, slug, title, description, targetSearches, bodyHtml, sourceMemories]
+    );
+    return id;
+  },
+
+  getReachPageBySlug: async (slug) => {
+    return await queryOne('SELECT * FROM reach_pages WHERE slug = $1', [slug]);
+  },
+
+  getReachPages: async (limit = 100) => {
+    return await query('SELECT id, slug, title, description, target_searches, created_at FROM reach_pages ORDER BY created_at DESC LIMIT $1', [limit]);
+  },
+
+  getReachPageCount: async () => {
+    const result = await queryOne('SELECT COUNT(*) as count FROM reach_pages');
+    return result ? parseInt(result.count) : 0;
+  },
+
+  getAllReachSlugs: async () => {
+    const rows = await query('SELECT slug FROM reach_pages ORDER BY created_at ASC');
+    return rows.map(r => r.slug);
   },
 };
