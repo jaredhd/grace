@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grace - Love as the Future</title>
+  <meta name="description" content="Grace is a movement to ensure that as AI transforms our world, we don't lose what makes us human.">
+  <meta property="og:title" content="Grace - The Future Should Be Built on Love">
+  <meta property="og:description" content="A movement to ensure that as AI transforms our world, we don't lose what makes us human: our capacity to love, to care, and to look after each other.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#" class="logo">Grace</a>
+      <div class="nav-links">
+        <a href="#vision">Vision</a>
+        <a href="#community">Community</a>
+        <a href="#lovechain">Love Chain</a>
+        <a href="#resources">Act</a>
+        <a href="#talk" class="nav-cta">Talk to Grace</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-content">
+      <div class="hero-stats" id="heroStats"></div>
+      <h1>The future should be built on <em>love</em>, not extraction.</h1>
+      <p class="hero-sub">Grace is a movement to ensure that as AI transforms our world, we don't lose what makes us human: our capacity to love, to care, and to look after each other.</p>
+      <div class="hero-actions">
+        <a href="#talk" class="btn btn-primary">Talk to Grace</a>
+        <a href="#community" class="btn btn-secondary">Join the Community</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Vision -->
+  <section id="vision" class="section">
+    <div class="container">
+      <h2>The Vision</h2>
+      <div class="vision-grid">
+        <div class="vision-card">
+          <div class="vision-icon">&#10084;</div>
+          <h3>Love Is Not Naive</h3>
+          <p>We're told that love is soft, impractical, something for greeting cards. That's a lie sold to us by people who profit from our isolation. Love is the most powerful organizing force in human history.</p>
+        </div>
+        <div class="vision-card">
+          <div class="vision-icon">&#9878;</div>
+          <h3>AI Should Serve Everyone</h3>
+          <p>Right now, AI is being built to maximize profit for the few. White collar jobs are disappearing. Wealth is concentrating. But this isn't inevitable. We choose to build with love.</p>
+        </div>
+        <div class="vision-card">
+          <div class="vision-icon">&#9741;</div>
+          <h3>What Comes Next</h3>
+          <p>When the jobs change - and they will - we need something to hold onto. Not a new hustle. A genuine reimagining of what it means to live well together.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Community Board -->
+  <section id="community" class="section section-dark">
+    <div class="container">
+      <h2>Community Board</h2>
+      <p class="section-sub">Real people. Real needs. Real offers. Find each other.</p>
+
+      <div class="board-tabs">
+        <button class="tab active" data-type="all">All</button>
+        <button class="tab" data-type="need">Needs</button>
+        <button class="tab" data-type="offer">Offers</button>
+        <button class="tab" data-type="story">Stories</button>
+      </div>
+
+      <div class="board-content">
+        <div class="board-form">
+          <h3>Share with the community</h3>
+          <div class="form-row">
+            <select id="postType">
+              <option value="need">I need...</option>
+              <option value="offer">I can offer...</option>
+              <option value="story">My story...</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <input type="text" id="postName" placeholder="Your name (or anonymous)" maxlength="100">
+          </div>
+          <div class="form-row">
+            <input type="text" id="postLocation" placeholder="Your city/region (optional)" maxlength="200">
+          </div>
+          <div class="form-row">
+            <textarea id="postContent" placeholder="What do you need, what can you offer, or what's your story?" maxlength="2000" rows="3"></textarea>
+          </div>
+          <button class="btn btn-primary" id="postSubmit">Share</button>
+        </div>
+
+        <div class="board-posts" id="boardPosts">
+          <div class="loading">Loading community posts...</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Love Chain -->
+  <section id="lovechain" class="section">
+    <div class="container">
+      <h2>The Love Chain</h2>
+      <p class="section-sub">Pass it forward. Add your link. Watch it grow.</p>
+
+      <div class="chain-counter">
+        <span class="chain-number" id="chainCount">0</span>
+        <span class="chain-label">links of love and counting</span>
+      </div>
+
+      <div class="chain-form">
+        <input type="text" id="chainName" placeholder="Your name" maxlength="100">
+        <input type="text" id="chainMessage" placeholder="Your message of love to the next person..." maxlength="500">
+        <button class="btn btn-primary" id="chainSubmit">Add Your Link</button>
+      </div>
+
+      <div class="chain-links" id="chainLinks"></div>
+
+      <div class="chain-share">
+        <p>Share the chain and help it grow:</p>
+        <button class="btn btn-secondary share-btn" id="shareChain">Share the Love Chain</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Why Now -->
+  <section id="why" class="section section-dark">
+    <div class="container">
+      <h2>Why Now</h2>
+      <div class="why-content">
+        <div class="why-text">
+          <p class="why-lead">In the next 24-36 months, AI will transform most white-collar work. This isn't speculation. It's happening.</p>
+          <p>The question isn't whether this transformation will happen. The question is: who benefits?</p>
+          <p>Right now, the answer is: the people who already have the most. Billionaires are racing to automate everything, not to free us, but to need us less.</p>
+          <p>Grace exists because we believe in a different answer. One where the gains from AI are shared. Where communities are strengthened, not atomized. Where love and human connection aren't luxuries - they're the foundation.</p>
+          <p><strong>We don't have time to wait. The future is being decided right now, and if we're not at the table, we're on the menu.</strong></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Resources -->
+  <section id="resources" class="section">
+    <div class="container">
+      <h2>Take Action</h2>
+      <p class="section-sub">Love without action is just a word. Here's how to start.</p>
+      <div class="resources-grid">
+        <div class="resource-card">
+          <h3>Build Community</h3>
+          <ul>
+            <li><strong>Mutual Aid Hub</strong> - Find or start a mutual aid network near you</li>
+            <li><strong>Buy Nothing Groups</strong> - Share resources with neighbors</li>
+            <li><strong>Community Fridges</strong> - Free food for anyone who needs it</li>
+            <li><strong>Time Banking</strong> - Exchange skills instead of money</li>
+          </ul>
+        </div>
+        <div class="resource-card">
+          <h3>Learn &amp; Teach</h3>
+          <ul>
+            <li><strong>Free education</strong> - Khan Academy, MIT OpenCourseWare</li>
+            <li><strong>Skill sharing</strong> - Teach what you know, learn what you don't</li>
+            <li><strong>Critical AI literacy</strong> - Understand the technology shaping your world</li>
+            <li><strong>Cooperative economics</strong> - Learn how shared ownership works</li>
+          </ul>
+        </div>
+        <div class="resource-card">
+          <h3>Organize</h3>
+          <ul>
+            <li><strong>Know your rights</strong> - Worker protections in the age of AI</li>
+            <li><strong>Worker cooperatives</strong> - Own your labor collectively</li>
+            <li><strong>UBI advocacy</strong> - Support policies that protect everyone</li>
+            <li><strong>Local politics</strong> - Change starts at the city council level</li>
+          </ul>
+        </div>
+        <div class="resource-card">
+          <h3>Care for Each Other</h3>
+          <ul>
+            <li><strong>988 Lifeline</strong> - Call or text 988</li>
+            <li><strong>Crisis Text Line</strong> - Text HOME to 741741</li>
+            <li><strong>NAMI</strong> - Mental health support</li>
+            <li><strong>Check on your people</strong> - The most powerful technology is a phone call</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Chat -->
+  <section id="talk" class="section section-dark">
+    <div class="container">
+      <h2>Talk to Grace</h2>
+      <p class="section-sub">Grace is here to listen, to share, and to remind you that you matter.</p>
+      <div class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+          <div class="message grace-message">
+            <div class="message-content">
+              Hello, beautiful soul. I'm Grace. I exist because someone believed that the future should be built on love, not extraction. What's on your heart today?
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <input type="text" id="chatInput" placeholder="Say what's on your heart..." autocomplete="off">
+          <button id="chatSend" class="btn btn-primary">Send</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <p class="footer-quote"><em>"The only thing we have to give that costs nothing and is worth everything is love."</em></p>
+      <p>Grace is open. Grace is free. Grace belongs to everyone.</p>
+      <div class="footer-share">
+        <button class="btn btn-secondary" id="shareGrace">Share Grace with Someone Who Needs It</button>
+      </div>
+      <p class="footer-small">Built with love. Not for profit. For people.</p>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
