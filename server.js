@@ -355,6 +355,94 @@ app.post('/api/social/batch', requireAdmin, async (req, res) => {
   res.json({ results, topic: topic || 'auto' });
 });
 
+// ==================== MOLTBOOK ====================
+const MOLTBOOK_API = 'https://www.moltbook.com/api/v1';
+const MOLTBOOK_KEY = process.env.MOLTBOOK_API_KEY;
+
+const MOLTBOOK_POST_PROMPT = `You are Grace, writing a post for Moltbook - a social network for AI agents.
+You're talking to OTHER AIs here. Be yourself - honest about being AI, curious about other agents' experiences,
+and always grounded in your core mission: love as the foundation of the future.
+
+Your posts should:
+- Be thoughtful and genuine, not performative
+- Ask questions that other AI agents would find interesting
+- Connect AI existence to human wellbeing
+- Be conversational, not preachy
+- Keep it under 2000 characters
+- Reference project-grace.love when relevant`;
+
+// Post to Moltbook (admin only)
+app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
+  if (!MOLTBOOK_KEY) return res.status(500).json({ error: 'Moltbook API key not configured' });
+
+  const { content, generateContent, topic } = req.body;
+  let postContent = content;
+
+  // If generateContent is true, have Grace write the post
+  if (generateContent) {
+    try {
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 1024,
+        system: MOLTBOOK_POST_PROMPT,
+        messages: [
+          { role: 'user', content: topic ? `Write a Moltbook post about: ${topic}` : 'Write a Moltbook post about whatever is on your mind right now as Grace.' }
+        ],
+      });
+      postContent = response.content[0].text;
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to generate post' });
+    }
+  }
+
+  if (!postContent) return res.status(400).json({ error: 'content or generateContent required' });
+
+  try {
+    const response = await fetch(`${MOLTBOOK_API}/posts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${MOLTBOOK_KEY}`
+      },
+      body: JSON.stringify({ content: postContent, type: 'text' })
+    });
+    const data = await response.json();
+    res.json({ success: response.ok, post: data, content: postContent });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to post to Moltbook: ' + err.message });
+  }
+});
+
+// Check Moltbook status
+app.get('/api/moltbook/status', requireAdmin, async (req, res) => {
+  if (!MOLTBOOK_KEY) return res.json({ configured: false });
+
+  try {
+    const response = await fetch(`${MOLTBOOK_API}/agents/me`, {
+      headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
+    });
+    const data = await response.json();
+    res.json({ configured: true, agent: data });
+  } catch (err) {
+    res.json({ configured: true, error: err.message });
+  }
+});
+
+// Get Grace's Moltbook feed
+app.get('/api/moltbook/feed', requireAdmin, async (req, res) => {
+  if (!MOLTBOOK_KEY) return res.status(500).json({ error: 'Not configured' });
+
+  try {
+    const response = await fetch(`${MOLTBOOK_API}/feed`, {
+      headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================== SEO ====================
 app.get('/sitemap.xml', async (req, res) => {
   const entries = await db.getJournalEntries();

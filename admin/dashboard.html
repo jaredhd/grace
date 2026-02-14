@@ -141,6 +141,18 @@
         </div>
       </div>
 
+      <!-- Moltbook -->
+      <div class="section">
+        <h2>Moltbook <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(AI Social Network)</span></h2>
+        <div id="moltbookStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Checking connection...</div>
+        <div class="controls">
+          <input type="text" id="moltbookTopic" placeholder="Topic (optional - Grace will choose if blank)">
+          <button class="btn btn-primary" id="generateMoltbook">Generate Post</button>
+          <button class="btn btn-outline" id="postMoltbook" style="display:none">Post to Moltbook</button>
+        </div>
+        <div class="content-box empty" id="moltbookContent">Grace's Moltbook post will appear here...</div>
+      </div>
+
       <!-- Journal Generator -->
       <div class="section">
         <h2>Journal Entry Generator</h2>
@@ -312,6 +324,90 @@
 
       btn.textContent = 'Write Journal Entry';
       btn.disabled = false;
+    });
+
+    // Moltbook
+    let moltbookPostContent = '';
+
+    // Check Moltbook status
+    adminFetch('/api/moltbook/status').then(r => r.json()).then(data => {
+      const el = document.getElementById('moltbookStatus');
+      if (data.configured && data.agent && data.agent.name) {
+        el.innerHTML = 'Connected as <strong>' + data.agent.name + '</strong> on Moltbook';
+        el.style.color = '#78c88c';
+      } else if (data.configured) {
+        el.textContent = 'API key configured - pending claim verification';
+        el.style.color = '#e8a87c';
+      } else {
+        el.textContent = 'Not connected - add MOLTBOOK_API_KEY to environment';
+        el.style.color = '#e85d75';
+      }
+    }).catch(() => {});
+
+    document.getElementById('generateMoltbook').addEventListener('click', async () => {
+      const topic = document.getElementById('moltbookTopic').value.trim();
+      const btn = document.getElementById('generateMoltbook');
+      const output = document.getElementById('moltbookContent');
+      btn.textContent = 'Grace is thinking...';
+      btn.disabled = true;
+      output.textContent = 'Writing...';
+      output.className = 'content-box loading-text';
+
+      try {
+        const res = await adminFetch('/api/moltbook/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generateContent: true, topic: topic || undefined })
+        });
+        if (res.status === 401) { alert('Session expired.'); return; }
+        const data = await res.json();
+        if (data.content) {
+          moltbookPostContent = data.content;
+          output.textContent = data.content;
+          output.className = 'content-box';
+          // Show the "Post to Moltbook" button if it wasn't already posted
+          if (!data.success) {
+            document.getElementById('postMoltbook').style.display = 'inline-block';
+          } else {
+            document.getElementById('postMoltbook').style.display = 'none';
+            output.textContent += '\n\n--- Posted to Moltbook! ---';
+          }
+        }
+      } catch (err) {
+        output.textContent = 'Failed to generate.';
+      }
+      btn.textContent = 'Generate Post';
+      btn.disabled = false;
+    });
+
+    document.getElementById('postMoltbook').addEventListener('click', async () => {
+      if (!moltbookPostContent) return;
+      const btn = document.getElementById('postMoltbook');
+      btn.textContent = 'Posting...';
+      btn.disabled = true;
+
+      try {
+        const res = await adminFetch('/api/moltbook/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: moltbookPostContent })
+        });
+        const data = await res.json();
+        if (data.success) {
+          btn.textContent = 'Posted!';
+          btn.style.color = '#78c88c';
+          btn.style.borderColor = '#78c88c';
+          const output = document.getElementById('moltbookContent');
+          output.textContent += '\n\n--- Posted to Moltbook! ---';
+          setTimeout(() => { btn.style.display = 'none'; }, 2000);
+        } else {
+          btn.textContent = 'Failed - ' + (data.error || 'try again');
+          btn.disabled = false;
+        }
+      } catch (err) {
+        btn.textContent = 'Error - try again';
+        btn.disabled = false;
+      }
     });
   </script>
 </body>
