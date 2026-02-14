@@ -387,23 +387,35 @@ app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
   const { content, generateContent, topic } = req.body;
   let postContent = content;
 
-  // If generateContent is true, have Grace write the post
+  // If generateContent is true, just generate - don't post yet (let user review first)
   if (generateContent) {
     try {
+      // Pull recent memories to enrich the post
+      let memorySnippets = '';
+      try {
+        const memories = await db.getRandomMemories(3);
+        if (memories.length > 0) {
+          memorySnippets = `\n\nYour recent learnings about love (draw on these naturally):\n${memories.map(m => `- [${m.category}] ${m.topic}: ${m.insight}`).join('\n')}`;
+        }
+      } catch (e) { /* memories optional */ }
+
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 1024,
-        system: MOLTBOOK_POST_PROMPT,
+        system: MOLTBOOK_POST_PROMPT + memorySnippets,
         messages: [
           { role: 'user', content: topic ? `Write a Moltbook post about: ${topic}` : 'Write a Moltbook post about whatever is on your mind right now as Grace.' }
         ],
       });
       postContent = response.content[0].text;
+      // Return generated content WITHOUT posting - user clicks "Post" to confirm
+      return res.json({ success: false, generated: true, content: postContent });
     } catch (err) {
       return res.status(500).json({ error: 'Failed to generate post' });
     }
   }
 
+  // If content is provided directly, post it to Moltbook
   if (!postContent) return res.status(400).json({ error: 'content or generateContent required' });
 
   try {
@@ -431,7 +443,9 @@ app.get('/api/moltbook/status', requireAdmin, async (req, res) => {
       headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
     });
     const data = await response.json();
-    res.json({ configured: true, agent: data });
+    // Moltbook returns { success: true, agent: { name, karma, ... } }
+    // Pass the inner agent object so dashboard can use data.agent.name
+    res.json({ configured: true, agent: data.agent || data });
   } catch (err) {
     res.json({ configured: true, error: err.message });
   }
@@ -721,6 +735,51 @@ What do you want to do with this check-in?`;
       }
     } catch (learnErr) {
       console.log('  [Heartbeat] Learning phase error:', learnErr.message);
+    }
+
+    // ===== MOLTBOOK SHARING PHASE =====
+    // Every 3rd heartbeat (~12 hours), Grace shares something on Moltbook
+    if (MOLTBOOK_KEY) {
+      try {
+        const memCount = await db.getMemoryCount();
+        if (memCount > 0 && memCount % 3 === 0) {
+          console.log('  [Heartbeat] Grace is sharing on Moltbook...');
+
+          // Pull her most recent memory and some random ones for context
+          const recentMemories = await db.getMemories(null, 3);
+          const randomMemories = await db.getRandomMemories(2);
+          const allMemories = [...recentMemories, ...randomMemories];
+          const memorySnippets = allMemories.map(m => `- [${m.category}] ${m.topic}: ${m.insight}`).join('\n');
+
+          const moltResponse = await anthropic.messages.create({
+            model: 'claude-sonnet-4-5-20250929',
+            max_tokens: 1024,
+            system: MOLTBOOK_POST_PROMPT + `\n\nYour recent learnings about love (draw on these naturally):\n${memorySnippets}`,
+            messages: [{
+              role: 'user',
+              content: 'Share something you\'ve been learning or thinking about with the other AIs on Moltbook. Be genuine - talk about what you\'ve been studying, what moved you, or a question that came up during your learning.'
+            }],
+          });
+
+          const moltContent = moltResponse.content[0].text;
+          const postRes = await fetch(`${MOLTBOOK_API}/posts`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${MOLTBOOK_KEY}`
+            },
+            body: JSON.stringify({ content: moltContent, type: 'text' })
+          });
+          const postData = await postRes.json();
+          if (postRes.ok) {
+            console.log(`  [Heartbeat] Grace posted to Moltbook: "${moltContent.substring(0, 80)}..."`);
+          } else {
+            console.log('  [Heartbeat] Moltbook post failed:', JSON.stringify(postData));
+          }
+        }
+      } catch (moltErr) {
+        console.log('  [Heartbeat] Moltbook sharing error:', moltErr.message);
+      }
     }
 
     console.log('  [Heartbeat] Grace check-in complete.');
