@@ -355,6 +355,37 @@ app.post('/api/social/batch', requireAdmin, async (req, res) => {
   res.json({ results, topic: topic || 'auto' });
 });
 
+// ==================== SEO ====================
+app.get('/sitemap.xml', async (req, res) => {
+  const entries = await db.getJournalEntries();
+  const baseUrl = 'https://project-grace.love';
+  const today = new Date().toISOString().split('T')[0];
+
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${baseUrl}/</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>`;
+
+  for (const entry of entries) {
+    const date = new Date(entry.created_at).toISOString().split('T')[0];
+    xml += `
+  <url>
+    <loc>${baseUrl}/api/journal/${entry.id}</loc>
+    <lastmod>${date}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+  }
+
+  xml += '\n</urlset>';
+  res.set('Content-Type', 'application/xml');
+  res.send(xml);
+});
+
 // ==================== STATS ====================
 app.get('/api/stats', async (req, res) => {
   const loveLinks = await db.getLoveChainCount();
