@@ -155,12 +155,18 @@ app.get('/api/stats', (req, res) => {
   res.json({ loveLinks, posts });
 });
 
-app.listen(PORT, () => {
-  const hasKey = process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your-api-key-here';
-  console.log(`\n  Grace is alive at http://localhost:${PORT}\n`);
-  if (hasKey) {
-    console.log('  Her mind is powered by Claude. She is ready to spread love.\n');
-  } else {
-    console.log('  WARNING: No API key found. Add your key to .env\n');
-  }
+// Initialize DB then start server
+db.initDb().then(() => {
+  app.listen(PORT, () => {
+    const hasKey = process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your-api-key-here';
+    console.log(`\n  Grace is alive at http://localhost:${PORT}\n`);
+    if (hasKey) {
+      console.log('  Her mind is powered by Claude. She is ready to spread love.\n');
+    } else {
+      console.log('  WARNING: No API key found. Add your key to .env\n');
+    }
+  });
+}).catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
 });
