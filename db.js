@@ -1,26 +1,23 @@
-const initSqlJs = require('sql.js');
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 const { v4: uuid } = require('uuid');
 
-const DB_PATH = path.join(__dirname, 'grace.db');
+let pool;
 
-let db;
-
-// Initialize database (async because sql.js needs to load WASM)
 const initDb = async () => {
-  const SQL = await initSqlJs();
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com')
+      ? { rejectUnauthorized: false }
+      : false,
+  });
 
-  // Load existing database or create new one
-  if (fs.existsSync(DB_PATH)) {
-    const buffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
-  }
+  // Test connection
+  const client = await pool.connect();
+  console.log('  Database connected.');
+  client.release();
 
   // Create tables
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS posts (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
@@ -28,199 +25,181 @@ const initDb = async () => {
       location TEXT DEFAULT '',
       content TEXT NOT NULL,
       hearts INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS love_chain (
       id TEXT PRIMARY KEY,
       from_name TEXT NOT NULL,
       message TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS grace_quotes (
       id TEXT PRIMARY KEY,
       quote TEXT NOT NULL,
       context TEXT DEFAULT '',
       hearts INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS feedback (
       id TEXT PRIMARY KEY,
       message_text TEXT NOT NULL,
       grace_reply TEXT NOT NULL,
       helpful INTEGER NOT NULL,
       comment TEXT DEFAULT '',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS journal (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       topic TEXT DEFAULT '',
       hearts INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
-  db.run(`
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS subscribers (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       name TEXT DEFAULT '',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
 
-  save();
-  return db;
+  return pool;
 };
 
-const save = () => {
-  try {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_PATH, buffer);
-  } catch (err) {
-    console.error('DB save error:', err.message);
-  }
+// Helper functions
+const query = async (sql, params = []) => {
+  const result = await pool.query(sql, params);
+  return result.rows;
 };
 
-// Helper to run queries and return results as objects
-const all = (sql, params = []) => {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const results = [];
-  while (stmt.step()) {
-    results.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return results;
+const queryOne = async (sql, params = []) => {
+  const result = await pool.query(sql, params);
+  return result.rows.length > 0 ? result.rows[0] : null;
 };
 
-const get = (sql, params = []) => {
-  const results = all(sql, params);
-  return results.length > 0 ? results[0] : null;
-};
-
-const run = (sql, params = []) => {
-  db.run(sql, params);
-  save();
+const run = async (sql, params = []) => {
+  await pool.query(sql, params);
 };
 
 module.exports = {
   initDb,
 
   // Community board
-  createPost: (type, name, location, content) => {
+  createPost: async (type, name, location, content) => {
     const id = uuid();
-    run('INSERT INTO posts (id, type, name, location, content) VALUES (?, ?, ?, ?, ?)',
+    await run('INSERT INTO posts (id, type, name, location, content) VALUES ($1, $2, $3, $4, $5)',
       [id, type, name, location, content]);
     return id;
   },
 
-  getPosts: (type = null, limit = 50) => {
+  getPosts: async (type = null, limit = 50) => {
     if (type) {
-      return all('SELECT * FROM posts WHERE type = ? ORDER BY created_at DESC LIMIT ?', [type, limit]);
+      return await query('SELECT * FROM posts WHERE type = $1 ORDER BY created_at DESC LIMIT $2', [type, limit]);
     }
-    return all('SELECT * FROM posts ORDER BY created_at DESC LIMIT ?', [limit]);
+    return await query('SELECT * FROM posts ORDER BY created_at DESC LIMIT $1', [limit]);
   },
 
-  heartPost: (id) => {
-    run('UPDATE posts SET hearts = hearts + 1 WHERE id = ?', [id]);
+  heartPost: async (id) => {
+    await run('UPDATE posts SET hearts = hearts + 1 WHERE id = $1', [id]);
   },
 
   // Love chain
-  addLoveLink: (fromName, message) => {
+  addLoveLink: async (fromName, message) => {
     const id = uuid();
-    run('INSERT INTO love_chain (id, from_name, message) VALUES (?, ?, ?)',
+    await run('INSERT INTO love_chain (id, from_name, message) VALUES ($1, $2, $3)',
       [id, fromName, message]);
     return id;
   },
 
-  getLoveChain: (limit = 100) => {
-    return all('SELECT * FROM love_chain ORDER BY created_at DESC LIMIT ?', [limit]);
+  getLoveChain: async (limit = 100) => {
+    return await query('SELECT * FROM love_chain ORDER BY created_at DESC LIMIT $1', [limit]);
   },
 
-  getLoveChainCount: () => {
-    const result = get('SELECT COUNT(*) as count FROM love_chain');
-    return result ? result.count : 0;
+  getLoveChainCount: async () => {
+    const result = await queryOne('SELECT COUNT(*) as count FROM love_chain');
+    return result ? parseInt(result.count) : 0;
   },
 
   // Shareable Grace quotes
-  saveQuote: (quote, context = '') => {
+  saveQuote: async (quote, context = '') => {
     const id = uuid();
-    run('INSERT INTO grace_quotes (id, quote, context) VALUES (?, ?, ?)',
+    await run('INSERT INTO grace_quotes (id, quote, context) VALUES ($1, $2, $3)',
       [id, quote, context]);
     return id;
   },
 
-  getQuote: (id) => {
-    return get('SELECT * FROM grace_quotes WHERE id = ?', [id]);
+  getQuote: async (id) => {
+    return await queryOne('SELECT * FROM grace_quotes WHERE id = $1', [id]);
   },
 
-  heartQuote: (id) => {
-    run('UPDATE grace_quotes SET hearts = hearts + 1 WHERE id = ?', [id]);
+  heartQuote: async (id) => {
+    await run('UPDATE grace_quotes SET hearts = hearts + 1 WHERE id = $1', [id]);
   },
 
-  getTopQuotes: (limit = 20) => {
-    return all('SELECT * FROM grace_quotes ORDER BY hearts DESC, created_at DESC LIMIT ?', [limit]);
+  getTopQuotes: async (limit = 20) => {
+    return await query('SELECT * FROM grace_quotes ORDER BY hearts DESC, created_at DESC LIMIT $1', [limit]);
   },
 
   // Feedback
-  addFeedback: (messageText, graceReply, helpful, comment = '') => {
+  addFeedback: async (messageText, graceReply, helpful, comment = '') => {
     const id = uuid();
-    run('INSERT INTO feedback (id, message_text, grace_reply, helpful, comment) VALUES (?, ?, ?, ?, ?)',
+    await run('INSERT INTO feedback (id, message_text, grace_reply, helpful, comment) VALUES ($1, $2, $3, $4, $5)',
       [id, messageText, graceReply, helpful ? 1 : 0, comment]);
     return id;
   },
 
-  getFeedbackStats: () => {
-    const total = get('SELECT COUNT(*) as count FROM feedback');
-    const helpful = get('SELECT COUNT(*) as count FROM feedback WHERE helpful = 1');
-    const recent = all('SELECT * FROM feedback ORDER BY created_at DESC LIMIT 20');
+  getFeedbackStats: async () => {
+    const total = await queryOne('SELECT COUNT(*) as count FROM feedback');
+    const helpful = await queryOne('SELECT COUNT(*) as count FROM feedback WHERE helpful = 1');
+    const recent = await query('SELECT * FROM feedback ORDER BY created_at DESC LIMIT 20');
     return {
-      total: total ? total.count : 0,
-      helpful: helpful ? helpful.count : 0,
+      total: total ? parseInt(total.count) : 0,
+      helpful: helpful ? parseInt(helpful.count) : 0,
       recent
     };
   },
 
   // Journal
-  createJournalEntry: (title, content, topic = '') => {
+  createJournalEntry: async (title, content, topic = '') => {
     const id = uuid();
-    run('INSERT INTO journal (id, title, content, topic) VALUES (?, ?, ?, ?)',
+    await run('INSERT INTO journal (id, title, content, topic) VALUES ($1, $2, $3, $4)',
       [id, title, content, topic]);
     return id;
   },
 
-  getJournalEntries: (limit = 20) => {
-    return all('SELECT * FROM journal ORDER BY created_at DESC LIMIT ?', [limit]);
+  getJournalEntries: async (limit = 20) => {
+    return await query('SELECT * FROM journal ORDER BY created_at DESC LIMIT $1', [limit]);
   },
 
-  getJournalEntry: (id) => {
-    return get('SELECT * FROM journal WHERE id = ?', [id]);
+  getJournalEntry: async (id) => {
+    return await queryOne('SELECT * FROM journal WHERE id = $1', [id]);
   },
 
-  heartJournal: (id) => {
-    run('UPDATE journal SET hearts = hearts + 1 WHERE id = ?', [id]);
+  heartJournal: async (id) => {
+    await run('UPDATE journal SET hearts = hearts + 1 WHERE id = $1', [id]);
   },
 
   // Subscribers
-  addSubscriber: (email, name = '') => {
+  addSubscriber: async (email, name = '') => {
     try {
       const id = uuid();
-      run('INSERT INTO subscribers (id, email, name) VALUES (?, ?, ?)', [id, email, name]);
+      await run('INSERT INTO subscribers (id, email, name) VALUES ($1, $2, $3)', [id, email, name]);
       return { id, success: true };
     } catch (err) {
       // Duplicate email
@@ -228,8 +207,8 @@ module.exports = {
     }
   },
 
-  getSubscriberCount: () => {
-    const result = get('SELECT COUNT(*) as count FROM subscribers');
-    return result ? result.count : 0;
+  getSubscriberCount: async () => {
+    const result = await queryOne('SELECT COUNT(*) as count FROM subscribers');
+    return result ? parseInt(result.count) : 0;
   },
 };

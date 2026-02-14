@@ -109,81 +109,81 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // ==================== COMMUNITY BOARD ====================
-app.get('/api/posts', (req, res) => {
+app.get('/api/posts', async (req, res) => {
   const { type } = req.query;
-  const posts = db.getPosts(type || null);
+  const posts = await db.getPosts(type || null);
   res.json({ posts });
 });
 
-app.post('/api/posts', (req, res) => {
+app.post('/api/posts', async (req, res) => {
   const { type, name, location, content } = req.body;
   if (!type || !name || !content) return res.status(400).json({ error: 'type, name, and content required' });
   if (!['need', 'offer', 'story'].includes(type)) return res.status(400).json({ error: 'type must be need, offer, or story' });
   if (name.length > 100 || content.length > 2000 || (location && location.length > 200)) {
     return res.status(400).json({ error: 'Content too long' });
   }
-  const id = db.createPost(type, name, location || '', content);
+  const id = await db.createPost(type, name, location || '', content);
   res.json({ id });
 });
 
-app.post('/api/posts/:id/heart', (req, res) => {
-  db.heartPost(req.params.id);
+app.post('/api/posts/:id/heart', async (req, res) => {
+  await db.heartPost(req.params.id);
   res.json({ ok: true });
 });
 
 // ==================== LOVE CHAIN ====================
-app.get('/api/lovechain', (req, res) => {
-  const chain = db.getLoveChain();
-  const count = db.getLoveChainCount();
+app.get('/api/lovechain', async (req, res) => {
+  const chain = await db.getLoveChain();
+  const count = await db.getLoveChainCount();
   res.json({ chain, count });
 });
 
-app.post('/api/lovechain', (req, res) => {
+app.post('/api/lovechain', async (req, res) => {
   const { name, message } = req.body;
   if (!name || !message) return res.status(400).json({ error: 'name and message required' });
   if (name.length > 100 || message.length > 500) return res.status(400).json({ error: 'Content too long' });
-  const id = db.addLoveLink(name, message);
-  const count = db.getLoveChainCount();
+  const id = await db.addLoveLink(name, message);
+  const count = await db.getLoveChainCount();
   res.json({ id, count });
 });
 
 // ==================== SHAREABLE QUOTES ====================
-app.post('/api/quotes', (req, res) => {
+app.post('/api/quotes', async (req, res) => {
   const { quote, context } = req.body;
   if (!quote) return res.status(400).json({ error: 'quote required' });
   if (quote.length > 1000) return res.status(400).json({ error: 'Quote too long' });
-  const id = db.saveQuote(quote, context || '');
+  const id = await db.saveQuote(quote, context || '');
   res.json({ id });
 });
 
-app.get('/api/quotes/:id', (req, res) => {
-  const quote = db.getQuote(req.params.id);
+app.get('/api/quotes/:id', async (req, res) => {
+  const quote = await db.getQuote(req.params.id);
   if (!quote) return res.status(404).json({ error: 'Quote not found' });
   res.json({ quote });
 });
 
-app.get('/api/quotes', (req, res) => {
-  const quotes = db.getTopQuotes();
+app.get('/api/quotes', async (req, res) => {
+  const quotes = await db.getTopQuotes();
   res.json({ quotes });
 });
 
-app.post('/api/quotes/:id/heart', (req, res) => {
-  db.heartQuote(req.params.id);
+app.post('/api/quotes/:id/heart', async (req, res) => {
+  await db.heartQuote(req.params.id);
   res.json({ ok: true });
 });
 
 // ==================== FEEDBACK ====================
-app.post('/api/feedback', (req, res) => {
+app.post('/api/feedback', async (req, res) => {
   const { messageText, graceReply, helpful, comment } = req.body;
   if (messageText === undefined || graceReply === undefined || helpful === undefined) {
     return res.status(400).json({ error: 'messageText, graceReply, and helpful required' });
   }
-  const id = db.addFeedback(messageText, graceReply, helpful, comment || '');
+  const id = await db.addFeedback(messageText, graceReply, helpful, comment || '');
   res.json({ id, thanks: helpful ? "Thank you. That means a lot." : "Thank you for your honesty. It helps me grow." });
 });
 
-app.get('/api/feedback/stats', requireAdmin, (req, res) => {
-  const stats = db.getFeedbackStats();
+app.get('/api/feedback/stats', requireAdmin, async (req, res) => {
+  const stats = await db.getFeedbackStats();
   res.json(stats);
 });
 
@@ -228,7 +228,7 @@ app.post('/api/journal/generate', requireAdmin, async (req, res) => {
     });
 
     const title = titleResponse.content[0].text.trim();
-    const id = db.createJournalEntry(title, content, topic);
+    const id = await db.createJournalEntry(title, content, topic);
     res.json({ id, title, content, topic });
   } catch (err) {
     console.error('Journal error:', err.message);
@@ -236,31 +236,31 @@ app.post('/api/journal/generate', requireAdmin, async (req, res) => {
   }
 });
 
-app.get('/api/journal', (req, res) => {
-  const entries = db.getJournalEntries();
+app.get('/api/journal', async (req, res) => {
+  const entries = await db.getJournalEntries();
   res.json({ entries });
 });
 
-app.get('/api/journal/:id', (req, res) => {
-  const entry = db.getJournalEntry(req.params.id);
+app.get('/api/journal/:id', async (req, res) => {
+  const entry = await db.getJournalEntry(req.params.id);
   if (!entry) return res.status(404).json({ error: 'Entry not found' });
   res.json({ entry });
 });
 
-app.post('/api/journal/:id/heart', (req, res) => {
-  db.heartJournal(req.params.id);
+app.post('/api/journal/:id/heart', async (req, res) => {
+  await db.heartJournal(req.params.id);
   res.json({ ok: true });
 });
 
 // ==================== SUBSCRIBERS ====================
-app.post('/api/subscribe', (req, res) => {
+app.post('/api/subscribe', async (req, res) => {
   const { email, name } = req.body;
   if (!email) return res.status(400).json({ error: 'email required' });
   // Basic email validation
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: 'invalid email' });
   }
-  const result = db.addSubscriber(email, name || '');
+  const result = await db.addSubscriber(email, name || '');
   if (result.success) {
     res.json({ message: "Welcome to the movement. You matter, and we're glad you're here." });
   } else {
@@ -356,11 +356,11 @@ app.post('/api/social/batch', requireAdmin, async (req, res) => {
 });
 
 // ==================== STATS ====================
-app.get('/api/stats', (req, res) => {
-  const loveLinks = db.getLoveChainCount();
-  const posts = db.getPosts().length;
-  const subscribers = db.getSubscriberCount();
-  res.json({ loveLinks, posts, subscribers });
+app.get('/api/stats', async (req, res) => {
+  const loveLinks = await db.getLoveChainCount();
+  const posts = await db.getPosts();
+  const subscribers = await db.getSubscriberCount();
+  res.json({ loveLinks, posts: posts.length, subscribers });
 });
 
 // Initialize DB then start server
