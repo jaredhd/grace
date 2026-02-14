@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="40%" r="35%">
+      <stop offset="0%" stop-color="#FFB347"/>
+      <stop offset="50%" stop-color="#FF8B7B"/>
+      <stop offset="100%" stop-color="#FF8B7B" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="outerGlow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#FFB347" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#FFB347" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="64" height="64" rx="14" fill="#1a1a2e"/>
+  <!-- Outer glow -->
+  <circle cx="32" cy="28" r="22" fill="url(#outerGlow)"/>
+  <!-- Inner glow / light -->
+  <circle cx="32" cy="26" r="10" fill="url(#glow)"/>
+  <!-- Core light -->
+  <circle cx="32" cy="25" r="5" fill="#FFB347" opacity="0.9"/>
+  <circle cx="32" cy="24" r="2.5" fill="#fff" opacity="0.5"/>
+  <!-- Left hand -->
+  <path d="M16 38 C16 28, 22 22, 28 24 C30 25, 30 27, 28 30 C26 33, 22 36, 20 40 C18 43, 16 44, 16 38Z" fill="#D4A574" opacity="0.85"/>
+  <!-- Right hand -->
+  <path d="M48 38 C48 28, 42 22, 36 24 C34 25, 34 27, 36 30 C38 33, 42 36, 44 40 C46 43, 48 44, 48 38Z" fill="#D4A574" opacity="0.85"/>
+  <!-- Subtle light reflection on hands -->
+  <path d="M28 24 C30 25, 30 27, 28 30" stroke="#FFB347" stroke-width="0.5" fill="none" opacity="0.4"/>
+  <path d="M36 24 C34 25, 34 27, 36 30" stroke="#FFB347" stroke-width="0.5" fill="none" opacity="0.4"/>
+</svg>

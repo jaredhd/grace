@@ -294,7 +294,8 @@ app.post('/api/social/generate', requireAdmin, async (req, res) => {
     reddit: 'Write a Reddit post for r/careerguidance or r/jobs. Title should be a question or statement that makes people click. Body should be 2-4 paragraphs - honest, vulnerable, actionable. Mention project-grace.love naturally, not as spam. Format: return JSON with "title" and "body" fields.',
     linkedin: 'Write a LinkedIn post (1200-1500 chars). Open with a bold, slightly provocative first line. Be professional but human. End with a question that drives comments. Mention project-grace.love.',
     instagram: 'Write an Instagram caption (under 2200 chars). Emotionally resonant. Start with a hook line. End with a CTA to visit project-grace.love. Suggest 3 relevant hashtags at the end.',
-    bluesky: 'Write a Bluesky post (under 300 chars). Punchy, honest, shareable. Include project-grace.love link.'
+    bluesky: 'Write a Bluesky post (under 300 chars). Punchy, honest, shareable. Include project-grace.love link.',
+    tiktok: 'Write a TikTok video script (30-60 seconds when spoken aloud). Format: Start with a powerful hook line (the first 3 seconds determine if people keep watching). Then deliver 3-4 punchy points. End with a call to action mentioning project-grace.love. Write it as spoken word - conversational, raw, emotional. Include [PAUSE] markers for dramatic effect. No hashtags in the script itself but suggest 3-5 hashtags separately at the end.'
   };
 
   const guide = platformGuides[platform] || platformGuides.twitter;
@@ -321,7 +322,7 @@ app.post('/api/social/generate', requireAdmin, async (req, res) => {
 // Generate a batch of content for all platforms
 app.post('/api/social/batch', requireAdmin, async (req, res) => {
   const { topic } = req.body;
-  const platforms = ['twitter', 'reddit', 'linkedin', 'bluesky'];
+  const platforms = ['twitter', 'reddit', 'linkedin', 'bluesky', 'tiktok'];
   const results = {};
 
   for (const platform of platforms) {
@@ -330,7 +331,8 @@ app.post('/api/social/batch', requireAdmin, async (req, res) => {
         twitter: 'Write a tweet thread (3-5 tweets, each under 280 chars). First tweet must hook immediately. Last tweet links to project-grace.love.',
         reddit: 'Write a Reddit post. Return ONLY valid JSON with "title" and "body" fields. Title should make people click. Body: 2-4 honest paragraphs. Mention project-grace.love naturally.',
         linkedin: 'Write a LinkedIn post (1200-1500 chars). Bold first line. Professional but human. End with a question. Mention project-grace.love.',
-        bluesky: 'Write a Bluesky post (under 300 chars). Punchy and shareable. Include project-grace.love.'
+        bluesky: 'Write a Bluesky post (under 300 chars). Punchy and shareable. Include project-grace.love.',
+        tiktok: 'Write a TikTok video script (30-60 sec spoken). Hook in first 3 seconds. 3-4 punchy points. CTA to project-grace.love. Conversational, raw, emotional. Include [PAUSE] markers. Suggest 3-5 hashtags separately at end.'
       };
 
       const topicLine = topic ? `Topic: ${topic}` : 'Choose a resonant topic about AI, jobs, love, and the future.';

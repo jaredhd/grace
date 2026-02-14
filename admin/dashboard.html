@@ -34,6 +34,7 @@
     .platform-name.reddit { color: #ff4500; }
     .platform-name.linkedin { color: #0077b5; }
     .platform-name.bluesky { color: #0085ff; }
+    .platform-name.tiktok { color: #fe2c55; }
 
     .content-box { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 16px; font-size: 0.9rem; color: rgba(255,255,255,0.8); white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; line-height: 1.8; }
     .content-box.empty { color: rgba(255,255,255,0.3); font-style: italic; text-align: center; padding: 40px; }
@@ -129,6 +130,13 @@
               <button class="btn btn-sm btn-outline copy-btn" data-platform="bluesky">Copy</button>
             </div>
             <div class="content-box empty" id="content-bluesky">Click "Generate All" to create content...</div>
+          </div>
+          <div class="platform-card">
+            <div class="platform-header">
+              <span class="platform-name tiktok">TikTok</span>
+              <button class="btn btn-sm btn-outline copy-btn" data-platform="tiktok">Copy</button>
+            </div>
+            <div class="content-box empty" id="content-tiktok">Click "Generate All" to create content...</div>
           </div>
         </div>
       </div>
@@ -232,7 +240,7 @@
       btn.textContent = 'Grace is writing...';
       btn.disabled = true;
 
-      ['twitter','reddit','linkedin','bluesky'].forEach(p => {
+      ['twitter','reddit','linkedin','bluesky','tiktok'].forEach(p => {
         document.getElementById('content-' + p).textContent = 'Generating...';
         document.getElementById('content-' + p).className = 'content-box loading-text';
       });
