@@ -40,6 +40,10 @@ app.get('/admin/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'admin', 'dashboard.html'));
 });
 
+app.get('/share', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'share.html'));
+});
+
 // Initialize Claude client
 const anthropic = new Anthropic.default({
   apiKey: process.env.ANTHROPIC_API_KEY,
