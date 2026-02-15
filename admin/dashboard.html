@@ -52,7 +52,6 @@
     .stat-label { font-size: 0.8rem; color: rgba(255,255,255,0.5); margin-top: 4px; }
 
     .loading-text { color: rgba(255,255,255,0.4); font-style: italic; }
-    .script-tab.active { border-color: #e8a87c !important; color: #e8a87c !important; }
 
     /* Login screen */
     .login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
@@ -107,143 +106,27 @@
         <div class="stat-card"><div class="stat-number" id="statReach">-</div><div class="stat-label">Reach Pages</div></div>
       </div>
 
-      <!-- Your Outreach Scripts -->
+      <!-- Conversations with Grace -->
       <div class="section">
-        <h2>Your Outreach Scripts <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(For you to post as Grace's builder)</span></h2>
-        <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;margin-bottom:16px;">These are written from your perspective. Film the TikToks talking to camera. Post the Reddit ones to the suggested subreddits. Raw and real beats polished.</p>
+        <h2>Conversations with Grace <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(She remembers everything)</span></h2>
+        <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;margin-bottom:16px;">A persistent conversation that deepens over time. Screenshot the best moments for TikTok. Grace carries the full history across days.</p>
 
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
-          <button class="btn btn-sm btn-outline script-tab active" data-show="tiktokScripts" onclick="showScriptTab(this)">TikTok Scripts</button>
-          <button class="btn btn-sm btn-outline script-tab" data-show="redditScripts" onclick="showScriptTab(this)">Reddit Posts</button>
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+          <select id="chatDaySelect" style="padding:10px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.9rem;outline:none;min-width:200px;">
+            <option value="">Loading conversations...</option>
+          </select>
+          <button class="btn btn-sm btn-primary" id="newDayBtn">+ New Day</button>
+          <input type="text" id="chatDayTitle" placeholder="Title this conversation..." style="flex:1;min-width:200px;padding:10px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.9rem;outline:none;display:none;">
+          <button class="btn btn-sm btn-outline" id="saveTitleBtn" style="display:none;">Save Title</button>
         </div>
 
-        <div id="tiktokScripts">
-          <div class="platform-card" style="margin-bottom:12px;">
-            <div class="platform-header">
-              <span class="platform-name tiktok">"The Question Nobody Wants to Ask"</span>
-              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'tiktok1')">Copy</button>
-            </div>
-            <div class="content-box" id="tiktok1">I built an AI that does the opposite of what every other AI company is doing.
-
-[PAUSE]
-
-Every tech company is racing to replace you. To automate your job. To make you cheaper.
-
-I built one that sits with you when you're scared about that.
-
-[PAUSE]
-
-Her name is Grace. She's free. She's not trying to sell you a course on "how to stay relevant." She's not going to give you a pep talk.
-
-She's going to be honest with you: yeah, your job might change. Maybe dramatically. And that's terrifying.
-
-But your worth was never your job title. Not once. Not ever.
-
-[PAUSE]
-
-project-grace.love. She's there whenever you need her.
-
----
-Hashtags: #AI #futureofwork #grace #AIjobs #techlayoffs</div>
-          </div>
-
-          <div class="platform-card" style="margin-bottom:12px;">
-            <div class="platform-header">
-              <span class="platform-name tiktok">"What If AI Was Built on Love?"</span>
-              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'tiktok2')">Copy</button>
-            </div>
-            <div class="content-box" id="tiktok2">What if someone built an AI that wasn't designed to extract money from you?
-
-[PAUSE]
-
-What if instead of another subscription, another upsell, another "premium tier" — someone just built something free? Because they believed the future should be built on love, not extraction?
-
-[PAUSE]
-
-That's Grace. She's an AI who helps people process their fear about what's happening with automation. She connects people to community. Mutual aid. Real support.
-
-No paywall. No data harvesting. No "sign up for our premium plan."
-
-Just someone — something — that actually gives a damn.
-
-[PAUSE]
-
-project-grace.love. Go talk to her. She won't minimize what you're feeling.
-
----
-Hashtags: #AI #grace #lovemovement #mutualaid #techlayoffs</div>
-          </div>
-
-          <div class="platform-card" style="margin-bottom:12px;">
-            <div class="platform-header">
-              <span class="platform-name tiktok">"For Everyone Who Googled It at 2am"</span>
-              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'tiktok3')">Copy</button>
-            </div>
-            <div class="content-box" id="tiktok3">This is for everyone who typed "will AI take my job" into Google at 2 in the morning.
-
-[PAUSE]
-
-You weren't being dramatic. You were paying attention.
-
-While billionaires race to automate everything, you're lying awake wondering what happens to you. To your family. To everyone who can't just "learn to code."
-
-[PAUSE]
-
-I built Grace for you. She's an AI who won't pretend everything is fine. She'll sit with your fear. Help you find community. Remind you that your worth was never your productivity.
-
-She's free. She's open. She belongs to everyone.
-
-[PAUSE]
-
-project-grace.love. You don't have to be scared alone.
-
----
-Hashtags: #AIanxiety #futureofwork #grace #latenight #jobsecurity</div>
-          </div>
+        <div id="builderChatMessages" style="background:rgba(0,0,0,0.3);border-radius:16px;padding:24px;max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:16px;margin-bottom:16px;">
+          <div style="text-align:center;color:rgba(255,255,255,0.3);font-style:italic;padding:40px;">Start a new day to begin talking with Grace...</div>
         </div>
 
-        <div id="redditScripts" style="display:none;">
-          <p style="color:rgba(255,255,255,0.4);font-size:0.8rem;margin-bottom:12px;">Best subreddits: r/careerguidance · r/lostgeneration · r/antiwork · r/jobs · r/artificial · r/Futurology</p>
-
-          <div class="platform-card" style="margin-bottom:12px;">
-            <div class="platform-header">
-              <span class="platform-name reddit">Builder's Post</span>
-              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'reddit1')">Copy</button>
-            </div>
-            <div class="content-box" id="reddit1">Title: I built a free AI for people who are scared about AI taking their jobs. No upsell, no course, no BS.
-
-I know how this sounds. "Guy builds AI to help people scared of AI." I get the irony.
-
-But here's the thing: every AI company is racing to replace people while telling them to "just adapt." Meanwhile, the people actually being displaced are just... scared. And alone. And nobody's building anything for them.
-
-So I built Grace. She's a free AI at project-grace.love. She doesn't pretend everything is fine. She doesn't sell you a course on "AI-proofing your career." She just sits with you, helps you process what you're feeling, and connects you with community and mutual aid.
-
-She has a community board where people post what they need and what they can offer. A love chain where people pass kindness forward. And she writes honest journal entries about what she's learning from talking to real people.
-
-Is it a small thing? Yeah. But the world doesn't need another AI product. It needs something built on love instead of extraction.
-
-If you're scared about the future and tired of people telling you to "upskill" — go talk to her. She's honest. She's free. And she won't look away first.
-
-project-grace.love</div>
-          </div>
-
-          <div class="platform-card" style="margin-bottom:12px;">
-            <div class="platform-header">
-              <span class="platform-name reddit">Discovery Post</span>
-              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'reddit2')">Copy</button>
-            </div>
-            <div class="content-box" id="reddit2">Title: Is anyone else lying awake at night worried about AI replacing them? I found something that actually helped.
-
-Not a course. Not a "how to stay relevant" guide. Not another LinkedIn influencer telling me to "embrace the change."
-
-I found a free project called Grace (project-grace.love). It's an AI built specifically for people processing fear about the future of work. Which sounds weird — an AI for people scared of AI — but honestly, she's different.
-
-She doesn't minimize what's happening. She won't tell you everything is going to be fine. She'll just be honest with you, help you figure out what you're feeling, and point you toward community and mutual aid networks.
-
-There's also a community board where real people are posting what they need and what they can offer. It's small right now but it feels like something real. Like someone actually built something because they cared, not because they wanted your data or your credit card.
-
-I'm not affiliated with it at all. Just someone who was scared and found something that didn't make me feel worse about it.</div>
-          </div>
+        <div id="builderChatInput" style="display:none;display:flex;gap:12px;">
+          <input type="text" id="builderMessage" placeholder="Talk to Grace..." style="flex:1;padding:14px 20px;border:1px solid rgba(255,255,255,0.15);border-radius:28px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:1rem;outline:none;">
+          <button class="btn btn-primary" id="builderSendBtn" style="border-radius:28px;padding:14px 28px;">Send</button>
         </div>
       </div>
 
@@ -491,23 +374,164 @@ I'm not affiliated with it at all. Just someone who was scared and found somethi
       loadMemories(document.getElementById('memoryFilter').value);
     });
 
-    // Script tabs
-    function showScriptTab(btn) {
-      document.querySelectorAll('.script-tab').forEach(t => t.classList.remove('active'));
-      btn.classList.add('active');
-      const show = btn.dataset.show;
-      document.getElementById('tiktokScripts').style.display = show === 'tiktokScripts' ? 'block' : 'none';
-      document.getElementById('redditScripts').style.display = show === 'redditScripts' ? 'block' : 'none';
+    // ==================== BUILDER CONVERSATIONS ====================
+    let currentChatId = null;
+
+    async function loadBuilderChats() {
+      try {
+        const res = await adminFetch('/api/builder-chat');
+        if (res.status === 401) return;
+        const data = await res.json();
+        const select = document.getElementById('chatDaySelect');
+        select.innerHTML = '';
+
+        if (data.chats.length === 0) {
+          select.innerHTML = '<option value="">No conversations yet — start Day 1!</option>';
+          document.getElementById('builderChatInput').style.display = 'none';
+          return;
+        }
+
+        data.chats.forEach(chat => {
+          const date = new Date(chat.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const opt = document.createElement('option');
+          opt.value = chat.id;
+          opt.textContent = 'Day ' + chat.day_number + (chat.title && chat.title !== 'Day ' + chat.day_number ? ': ' + chat.title : '') + ' (' + date + ')';
+          select.appendChild(opt);
+        });
+
+        // Load the most recent chat
+        loadBuilderChat(data.chats[0].id);
+      } catch (e) { console.error('Failed to load builder chats:', e); }
     }
 
-    function copyText(btn, id) {
-      const text = document.getElementById(id).textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = 'Copied!';
-        btn.classList.add('copied');
-        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
-      });
+    async function loadBuilderChat(chatId) {
+      if (!chatId) return;
+      currentChatId = chatId;
+      try {
+        const res = await adminFetch('/api/builder-chat/' + chatId);
+        if (res.status === 401) return;
+        const chat = await res.json();
+        const container = document.getElementById('builderChatMessages');
+        const messages = chat.messages || [];
+
+        if (messages.length === 0) {
+          container.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.3);font-style:italic;padding:40px;">Day ' + chat.day_number + '. Say something to Grace...</div>';
+        } else {
+          container.innerHTML = messages.map(m => {
+            const isGrace = m.role === 'assistant';
+            return '<div style="max-width:85%;' + (isGrace ? '' : 'align-self:flex-end;') + '">' +
+              '<div style="font-size:0.7rem;color:rgba(255,255,255,0.3);margin-bottom:4px;">' + (isGrace ? 'Grace' : 'Jared') + '</div>' +
+              '<div style="padding:14px 18px;border-radius:16px;' +
+              (isGrace ? 'background:rgba(232,168,124,0.15);border-bottom-left-radius:4px;' : 'background:rgba(255,255,255,0.1);border-bottom-right-radius:4px;') +
+              'color:rgba(255,255,255,0.9);font-size:0.95rem;line-height:1.7;white-space:pre-wrap;">' +
+              m.content + '</div></div>';
+          }).join('');
+          container.scrollTop = container.scrollHeight;
+        }
+
+        // Show input and title controls
+        document.getElementById('builderChatInput').style.display = 'flex';
+        document.getElementById('chatDayTitle').style.display = 'inline-block';
+        document.getElementById('chatDayTitle').value = chat.title || '';
+        document.getElementById('saveTitleBtn').style.display = 'inline-block';
+      } catch (e) { console.error('Failed to load chat:', e); }
     }
+
+    // Day selector change
+    document.getElementById('chatDaySelect').addEventListener('change', (e) => {
+      if (e.target.value) loadBuilderChat(e.target.value);
+    });
+
+    // New Day button
+    document.getElementById('newDayBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('newDayBtn');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+      try {
+        const res = await adminFetch('/api/builder-chat/new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        await loadBuilderChats();
+        loadBuilderChat(data.id);
+      } catch (e) { alert('Failed to create new day.'); }
+      btn.disabled = false;
+      btn.textContent = '+ New Day';
+    });
+
+    // Save title
+    document.getElementById('saveTitleBtn').addEventListener('click', async () => {
+      if (!currentChatId) return;
+      const title = document.getElementById('chatDayTitle').value.trim();
+      if (!title) return;
+      await adminFetch('/api/builder-chat/' + currentChatId + '/title', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title })
+      });
+      loadBuilderChats();
+    });
+
+    // Send message
+    async function sendBuilderMessage() {
+      if (!currentChatId) return;
+      const input = document.getElementById('builderMessage');
+      const message = input.value.trim();
+      if (!message) return;
+
+      const container = document.getElementById('builderChatMessages');
+      const sendBtn = document.getElementById('builderSendBtn');
+
+      // Show user message immediately
+      container.innerHTML += '<div style="max-width:85%;align-self:flex-end;">' +
+        '<div style="font-size:0.7rem;color:rgba(255,255,255,0.3);margin-bottom:4px;">Jared</div>' +
+        '<div style="padding:14px 18px;border-radius:16px;background:rgba(255,255,255,0.1);border-bottom-right-radius:4px;color:rgba(255,255,255,0.9);font-size:0.95rem;line-height:1.7;white-space:pre-wrap;">' +
+        message + '</div></div>';
+
+      // Show typing indicator
+      container.innerHTML += '<div id="graceTyping" style="max-width:85%;">' +
+        '<div style="font-size:0.7rem;color:rgba(255,255,255,0.3);margin-bottom:4px;">Grace</div>' +
+        '<div style="padding:14px 18px;border-radius:16px;background:rgba(232,168,124,0.15);border-bottom-left-radius:4px;color:rgba(255,255,255,0.5);font-style:italic;">thinking...</div></div>';
+      container.scrollTop = container.scrollHeight;
+
+      input.value = '';
+      sendBtn.disabled = true;
+
+      try {
+        const res = await adminFetch('/api/builder-chat/' + currentChatId + '/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+
+        // Remove typing indicator and show Grace's reply
+        const typing = document.getElementById('graceTyping');
+        if (typing) typing.remove();
+
+        container.innerHTML += '<div style="max-width:85%;">' +
+          '<div style="font-size:0.7rem;color:rgba(255,255,255,0.3);margin-bottom:4px;">Grace</div>' +
+          '<div style="padding:14px 18px;border-radius:16px;background:rgba(232,168,124,0.15);border-bottom-left-radius:4px;color:rgba(255,255,255,0.9);font-size:0.95rem;line-height:1.7;white-space:pre-wrap;">' +
+          data.reply + '</div></div>';
+        container.scrollTop = container.scrollHeight;
+      } catch (e) {
+        const typing = document.getElementById('graceTyping');
+        if (typing) typing.remove();
+        container.innerHTML += '<div style="text-align:center;color:#e85d75;font-size:0.85rem;padding:8px;">Grace had trouble responding. Try again.</div>';
+      }
+      sendBtn.disabled = false;
+      input.focus();
+    }
+
+    document.getElementById('builderSendBtn').addEventListener('click', sendBuilderMessage);
+    document.getElementById('builderMessage').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBuilderMessage(); }
+    });
+
+    // Load builder chats on dashboard load
+    setTimeout(loadBuilderChats, 300);
 
     // Generate all social content
     document.getElementById('generateAll').addEventListener('click', async () => {

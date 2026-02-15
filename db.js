@@ -149,6 +149,18 @@ const initDb = async () => {
     )
   `);
 
+  // Persistent builder-Grace conversations (for TikTok series etc)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS builder_chats (
+      id TEXT PRIMARY KEY,
+      day_number INTEGER NOT NULL,
+      title TEXT DEFAULT '',
+      messages JSONB NOT NULL DEFAULT '[]',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   return pool;
 };
 
@@ -426,5 +438,65 @@ module.exports = {
   getAllReachSlugs: async () => {
     const rows = await query('SELECT slug FROM reach_pages ORDER BY created_at ASC');
     return rows.map(r => r.slug);
+  },
+
+  // Builder chats - persistent conversations between Jared and Grace
+  getBuilderChats: async (limit = 50) => {
+    return await query('SELECT id, day_number, title, created_at, updated_at FROM builder_chats ORDER BY day_number DESC LIMIT $1', [limit]);
+  },
+
+  getBuilderChat: async (id) => {
+    return await queryOne('SELECT * FROM builder_chats WHERE id = $1', [id]);
+  },
+
+  getLatestBuilderChat: async () => {
+    return await queryOne('SELECT * FROM builder_chats ORDER BY day_number DESC LIMIT 1');
+  },
+
+  createBuilderChat: async (dayNumber, title = '') => {
+    const id = uuid();
+    await run(
+      'INSERT INTO builder_chats (id, day_number, title, messages) VALUES ($1, $2, $3, $4)',
+      [id, dayNumber, title, JSON.stringify([])]
+    );
+    return id;
+  },
+
+  addBuilderChatMessage: async (chatId, role, content) => {
+    const chat = await queryOne('SELECT messages FROM builder_chats WHERE id = $1', [chatId]);
+    if (!chat) return null;
+    const messages = chat.messages || [];
+    messages.push({ role, content, timestamp: new Date().toISOString() });
+    await run(
+      'UPDATE builder_chats SET messages = $1, updated_at = NOW() WHERE id = $2',
+      [JSON.stringify(messages), chatId]
+    );
+    return messages;
+  },
+
+  updateBuilderChatTitle: async (chatId, title) => {
+    await run('UPDATE builder_chats SET title = $1 WHERE id = $2', [title, chatId]);
+  },
+
+  getNextBuilderDayNumber: async () => {
+    const result = await queryOne('SELECT MAX(day_number) as max_day FROM builder_chats');
+    return result && result.max_day ? result.max_day + 1 : 1;
+  },
+
+  // Get ALL messages across all builder chats (for full context)
+  getAllBuilderMessages: async () => {
+    const chats = await query('SELECT day_number, title, messages FROM builder_chats ORDER BY day_number ASC');
+    const allMessages = [];
+    for (const chat of chats) {
+      const msgs = chat.messages || [];
+      for (const msg of msgs) {
+        allMessages.push({
+          day: chat.day_number,
+          title: chat.title,
+          ...msg
+        });
+      }
+    }
+    return allMessages;
   },
 };
