@@ -455,5 +455,14 @@
     }
 
   </script>
+  <script>
+  (function(){
+    var v=localStorage.getItem('grace_visitor_id');
+    if(!v){v=crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2);localStorage.setItem('grace_visitor_id',v);}
+    var d=JSON.stringify({visitorId:v,page:location.pathname,referrer:document.referrer,screenWidth:screen.width,screenHeight:screen.height});
+    if(navigator.sendBeacon){navigator.sendBeacon('/api/track',new Blob([d],{type:'application/json'}));}
+    else{fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:d,keepalive:true}).catch(function(){});}
+  })();
+  </script>
 </body>
 </html>

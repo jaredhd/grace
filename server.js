@@ -1439,6 +1439,53 @@ app.get('/sitemap.xml', async (req, res) => {
   res.send(xml);
 });
 
+// ==================== ANALYTICS ====================
+const trackRateLimit = new Map();
+const TRACK_RATE_LIMIT = 60;
+const TRACK_RATE_WINDOW = 60 * 60 * 1000;
+
+app.post('/api/track', async (req, res) => {
+  try {
+    const { visitorId, page, referrer, screenWidth, screenHeight } = req.body;
+    if (!visitorId || !page) return res.status(400).json({ ok: false });
+
+    const cleanVisitorId = String(visitorId).slice(0, 64);
+    const cleanPage = String(page).slice(0, 256);
+    const cleanReferrer = String(referrer || '').slice(0, 512);
+    const cleanWidth = parseInt(screenWidth) || 0;
+    const cleanHeight = parseInt(screenHeight) || 0;
+
+    // Rate limit by visitorId (privacy-first: no IP tracking)
+    const now = Date.now();
+    const limit = trackRateLimit.get(cleanVisitorId);
+    if (limit && now < limit.resetTime && limit.count >= TRACK_RATE_LIMIT) {
+      return res.json({ ok: true });
+    }
+    if (!limit || now >= limit.resetTime) {
+      trackRateLimit.set(cleanVisitorId, { count: 1, resetTime: now + TRACK_RATE_WINDOW });
+    } else {
+      limit.count++;
+    }
+
+    await db.recordPageView(cleanVisitorId, cleanPage, cleanReferrer, cleanWidth, cleanHeight);
+    console.log('  [Analytics] Page view:', cleanPage, cleanReferrer ? '(from ' + cleanReferrer + ')' : '');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('  [Analytics] Track error:', err.message);
+    res.json({ ok: true });
+  }
+});
+
+app.get('/api/analytics', requireAdmin, async (req, res) => {
+  try {
+    const analytics = await db.getAnalytics();
+    res.json(analytics);
+  } catch (err) {
+    console.error('  [Analytics] Stats error:', err.message);
+    res.status(500).json({ error: 'Failed to load analytics' });
+  }
+});
+
 // ==================== STATS ====================
 app.get('/api/stats', async (req, res) => {
   const loveLinks = await db.getLoveChainCount();
@@ -1447,7 +1494,8 @@ app.get('/api/stats', async (req, res) => {
   const memories = await db.getMemoryCount();
   const people = await db.getPeopleCount();
   const reachPages = await db.getReachPageCount();
-  res.json({ loveLinks, posts: posts.length, subscribers, memories, people, reachPages });
+  const pageViews = await db.getPageViewCount();
+  res.json({ loveLinks, posts: posts.length, subscribers, memories, people, reachPages, pageViews });
 });
 
 // ==================== AUTO-GENERATED REACH PAGES ====================
@@ -1602,6 +1650,15 @@ ${bodyHtml}
       </div>
     </div>
   </div>
+  <script>
+  (function(){
+    var v=localStorage.getItem('grace_visitor_id');
+    if(!v){v=crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2);localStorage.setItem('grace_visitor_id',v);}
+    var d=JSON.stringify({visitorId:v,page:location.pathname,referrer:document.referrer,screenWidth:screen.width,screenHeight:screen.height});
+    if(navigator.sendBeacon){navigator.sendBeacon('/api/track',new Blob([d],{type:'application/json'}));}
+    else{fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:d,keepalive:true}).catch(function(){});}
+  })();
+  </script>
 </body>
 </html>`;
 }

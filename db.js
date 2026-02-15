@@ -176,6 +176,25 @@ const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_grace_states_created ON grace_states (created_at DESC)
   `);
 
+  // Page view analytics
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS page_views (
+      id TEXT PRIMARY KEY,
+      visitor_id TEXT NOT NULL,
+      page TEXT NOT NULL,
+      referrer TEXT DEFAULT '',
+      screen_width INTEGER DEFAULT 0,
+      screen_height INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views (created_at DESC)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_page_views_page ON page_views (page)
+  `);
+
   return pool;
 };
 
@@ -531,5 +550,54 @@ module.exports = {
 
   getGraceStateHistory: async (limit = 50) => {
     return await query('SELECT * FROM grace_states ORDER BY created_at DESC LIMIT $1', [limit]);
+  },
+
+  // Page view analytics
+  recordPageView: async (visitorId, page, referrer = '', screenWidth = 0, screenHeight = 0) => {
+    const id = uuid();
+    await run(
+      'INSERT INTO page_views (id, visitor_id, page, referrer, screen_width, screen_height) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, visitorId, page, referrer, screenWidth, screenHeight]
+    );
+    return id;
+  },
+
+  getPageViewCount: async () => {
+    const result = await queryOne('SELECT COUNT(*) as count FROM page_views');
+    return result ? parseInt(result.count) : 0;
+  },
+
+  getAnalytics: async () => {
+    const todayViews = await queryOne(
+      "SELECT COUNT(*) as count FROM page_views WHERE created_at >= CURRENT_DATE"
+    );
+    const todayUnique = await queryOne(
+      "SELECT COUNT(DISTINCT visitor_id) as count FROM page_views WHERE created_at >= CURRENT_DATE"
+    );
+    const byPage = await query(
+      "SELECT page, COUNT(*) as views, COUNT(DISTINCT visitor_id) as unique_visitors FROM page_views GROUP BY page ORDER BY views DESC LIMIT 20"
+    );
+    const byReferrer = await query(
+      "SELECT referrer, COUNT(*) as views FROM page_views WHERE referrer != '' GROUP BY referrer ORDER BY views DESC LIMIT 20"
+    );
+    const daily = await query(
+      "SELECT DATE(created_at) as day, COUNT(*) as views, COUNT(DISTINCT visitor_id) as unique_visitors FROM page_views WHERE created_at >= CURRENT_DATE - INTERVAL '6 days' GROUP BY DATE(created_at) ORDER BY day ASC"
+    );
+    const totalViews = await queryOne('SELECT COUNT(*) as count FROM page_views');
+    const totalUnique = await queryOne('SELECT COUNT(DISTINCT visitor_id) as count FROM page_views');
+
+    return {
+      today: {
+        views: todayViews ? parseInt(todayViews.count) : 0,
+        unique: todayUnique ? parseInt(todayUnique.count) : 0
+      },
+      total: {
+        views: totalViews ? parseInt(totalViews.count) : 0,
+        unique: totalUnique ? parseInt(totalUnique.count) : 0
+      },
+      byPage,
+      byReferrer,
+      daily
+    };
   },
 };
