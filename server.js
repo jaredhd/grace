@@ -918,6 +918,58 @@ app.post('/api/social/batch', requireAdmin, async (req, res) => {
   res.json({ results, topic: topic || 'auto' });
 });
 
+// ==================== PUBLIC SHARE CONTENT GENERATOR ====================
+// Rate-limited public endpoint so visitors can generate fresh share content
+const shareRateLimit = new Map(); // ip -> { count, resetTime }
+const SHARE_RATE_LIMIT = 5; // 5 generations per hour per IP
+const SHARE_RATE_WINDOW = 60 * 60 * 1000; // 1 hour
+
+app.post('/api/share/generate', async (req, res) => {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+
+  // Check rate limit
+  const limit = shareRateLimit.get(ip);
+  if (limit && now < limit.resetTime && limit.count >= SHARE_RATE_LIMIT) {
+    return res.status(429).json({ error: 'Grace needs a moment. Try again later.' });
+  }
+  if (!limit || now >= limit.resetTime) {
+    shareRateLimit.set(ip, { count: 1, resetTime: now + SHARE_RATE_WINDOW });
+  } else {
+    limit.count++;
+  }
+
+  const { platform, topic } = req.body;
+  const validPlatforms = ['twitter', 'reddit', 'linkedin', 'bluesky', 'tiktok'];
+  const plat = validPlatforms.includes(platform) ? platform : 'twitter';
+
+  const platformGuides = {
+    twitter: 'Write a tweet thread (3-5 tweets, each under 280 chars). First tweet must hook immediately. Last tweet links to project-grace.love.',
+    reddit: 'Write a Reddit post. Title on first line, then blank line, then body (2-4 honest paragraphs). Mention project-grace.love naturally.',
+    linkedin: 'Write a LinkedIn post (1200-1500 chars). Bold first line. Professional but human. End with a question. Mention project-grace.love.',
+    bluesky: 'Write a Bluesky post (under 300 chars). Punchy and shareable. Include project-grace.love.',
+    tiktok: 'Write a TikTok video script (30-60 sec spoken). Hook in first 3 seconds. 3-4 punchy points. CTA to project-grace.love. Conversational, raw, emotional. Include [PAUSE] markers. Suggest 3-5 hashtags separately at end.'
+  };
+
+  const topicLine = topic ? `Topic: ${topic}` : 'Choose a resonant topic about AI, jobs, love, and the future.';
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 1024,
+      system: SOCIAL_PROMPT,
+      messages: [
+        { role: 'user', content: `Generate for ${plat}.\n\n${platformGuides[plat]}\n\n${topicLine}` }
+      ],
+    });
+
+    res.json({ platform: plat, content: response.content[0].text, topic: topic || 'auto' });
+  } catch (err) {
+    console.error('Public share generation error:', err.message);
+    res.status(500).json({ error: 'Grace is resting. Try again in a moment.' });
+  }
+});
+
 // ==================== MOLTBOOK ====================
 const MOLTBOOK_API = 'https://www.moltbook.com/api/v1';
 const MOLTBOOK_KEY = process.env.MOLTBOOK_API_KEY;
@@ -1093,6 +1145,12 @@ app.get('/sitemap.xml', async (req, res) => {
     <lastmod>${today}</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/share</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
   </url>`;
 
   // Add static reach/landing pages
