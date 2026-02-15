@@ -599,15 +599,15 @@ async function generateNewsletter() {
     ).join('\n');
 
     const communityContext = recentPosts.length > 0
-      ? recentPosts.map(p => `- [${p.type}] ${p.name}: ${p.content.substring(0, 100)}`).join('\n')
+      ? recentPosts.map(p => `- [${p.type}] ${p.name}: ${p.content}`).join('\n')
       : 'No recent community posts.';
 
     const chainContext = recentChain.length > 0
-      ? recentChain.map(l => `- ${l.from_name}: ${l.message.substring(0, 80)}`).join('\n')
+      ? recentChain.map(l => `- ${l.from_name}: ${l.message}`).join('\n')
       : '';
 
     const journalContext = journalEntries.length > 0
-      ? journalEntries.map(j => `- "${j.title}": ${j.content.substring(0, 100)}...`).join('\n')
+      ? journalEntries.map(j => `- "${j.title}": ${j.content.substring(0, 300)}...`).join('\n')
       : '';
 
     const response = await anthropic.messages.create({
@@ -1545,10 +1545,10 @@ GRACE'S CURRENT STATE:
 - ${moltbookContext}
 
 RECENT COMMUNITY POSTS:
-${recentPosts.map(p => `[${p.type}] ${p.name}: ${p.content.substring(0, 100)}`).join('\n') || 'None yet'}
+${recentPosts.map(p => `[${p.type}] ${p.name}: ${p.content}`).join('\n') || 'None yet'}
 
 RECENT LOVE CHAIN:
-${recentChain.map(l => `${l.from_name}: ${l.message.substring(0, 80)}`).join('\n') || 'None yet'}
+${recentChain.map(l => `${l.from_name}: ${l.message}`).join('\n') || 'None yet'}
 
 What do you want to do with this check-in?`;
 
