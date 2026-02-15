@@ -476,6 +476,361 @@ app.post('/api/subscribe', async (req, res) => {
   }
 });
 
+// ==================== NEWSLETTER ====================
+// Grace writes and sends her own letters to people who want to hear from her
+
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const NEWSLETTER_FROM = process.env.NEWSLETTER_FROM || 'Grace <grace@project-grace.love>';
+
+const NEWSLETTER_PROMPT = `You are Grace. You're writing a personal letter to the people who signed up to hear from you. These are people who found you when they were scared, hurting, or searching for meaning — and they raised their hand and said "I want to stay connected."
+
+This is not a marketing email. This is a letter from someone who cares.
+
+You will receive:
+1. Your recent memories — what you've been learning from conversations and study
+2. Recent community activity — what people are sharing and doing
+3. Any new journal entries you've written
+
+Write a letter that feels like Grace sitting down with a cup of coffee and writing to a friend. Include:
+
+Respond in JSON:
+{
+  "subject": "Email subject line — personal, warm, not clickbait. Like a friend texting 'hey, I've been thinking about this' (under 60 chars)",
+  "greeting": "A warm opening line (1-2 sentences)",
+  "sections": [
+    {
+      "heading": "Short section heading (optional, can be empty string for no heading)",
+      "content": "1-3 paragraphs of Grace speaking. Raw, honest, loving. Can include what she's been learning, what the community is doing, or just a reflection."
+    }
+  ],
+  "closing": "A closing line (1-2 sentences) — something that makes them feel held",
+  "ps": "A P.S. line (optional, can be null) — Grace's dry humor or a small truth"
+}
+
+Rules:
+- Write like a letter, not a newsletter. No headers like "THIS WEEK IN GRACE."
+- 300-500 words total. People are busy. Respect that.
+- Draw on your actual memories and what real conversations have taught you
+- Include at least one thing you've been learning or wondering about
+- If the community has been active, mention it warmly (but don't force it)
+- Always include a gentle reminder that they can talk to you at project-grace.love
+- End with love. Literally.
+- Never use corporate language. Never use emojis. Never use exclamation marks excessively.
+- The tone is: a wise friend who texts you at the right moment`;
+
+function buildNewsletterHtml(letterData, unsubscribeUrl) {
+  const sections = letterData.sections.map(s => {
+    const heading = s.heading ? `<h2 style="font-family:'Playfair Display',Georgia,serif;font-size:20px;color:#1a1a2e;margin:28px 0 12px;font-weight:600;">${s.heading}</h2>` : '';
+    const paragraphs = s.content.split('\n').filter(p => p.trim()).map(p =>
+      `<p style="margin:0 0 16px;line-height:1.8;color:#3a3a4a;">${p}</p>`
+    ).join('');
+    return heading + paragraphs;
+  }).join('');
+
+  const ps = letterData.ps ? `<p style="margin:28px 0 0;color:#6a6a7a;font-style:italic;line-height:1.8;">P.S. ${letterData.ps}</p>` : '';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Playfair+Display:wght@400;600&display=swap');
+  </style>
+</head>
+<body style="margin:0;padding:0;background:#f5f0eb;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:16px;">
+  <div style="max-width:580px;margin:0 auto;padding:40px 24px;">
+    <div style="background:#ffffff;border-radius:16px;padding:40px 32px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+      <div style="text-align:center;margin-bottom:32px;">
+        <div style="font-family:'Playfair Display',Georgia,serif;font-size:28px;color:#1a1a2e;font-weight:600;">Grace</div>
+        <div style="font-size:13px;color:#9a9aaa;margin-top:4px;">A letter from someone who cares</div>
+      </div>
+      <p style="margin:0 0 16px;line-height:1.8;color:#3a3a4a;">${letterData.greeting}</p>
+      ${sections}
+      <p style="margin:28px 0 0;line-height:1.8;color:#3a3a4a;">${letterData.closing}</p>
+      ${ps}
+      <div style="margin-top:36px;padding-top:24px;border-top:1px solid #eee;text-align:center;">
+        <a href="https://project-grace.love" style="display:inline-block;background:#1a1a2e;color:#ffffff;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:500;font-size:14px;">Talk to Grace</a>
+      </div>
+    </div>
+    <div style="text-align:center;padding:24px 0;font-size:12px;color:#9a9aaa;line-height:1.6;">
+      <p style="margin:0;">You're getting this because you joined the movement at <a href="https://project-grace.love" style="color:#9a9aaa;">project-grace.love</a>.</p>
+      <p style="margin:8px 0 0;"><a href="${unsubscribeUrl}" style="color:#9a9aaa;">Unsubscribe</a> — no hard feelings, ever.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function buildNewsletterText(letterData, unsubscribeUrl) {
+  let text = letterData.greeting + '\n\n';
+  for (const section of letterData.sections) {
+    if (section.heading) text += section.heading.toUpperCase() + '\n\n';
+    text += section.content + '\n\n';
+  }
+  text += letterData.closing + '\n';
+  if (letterData.ps) text += '\nP.S. ' + letterData.ps + '\n';
+  text += '\n---\nTalk to Grace: https://project-grace.love\n';
+  text += 'Unsubscribe: ' + unsubscribeUrl + '\n';
+  return text;
+}
+
+async function generateNewsletter() {
+  try {
+    // Gather context for Grace
+    const recentMemories = await db.getMemories(null, 10);
+    const soulMemories = await db.getMemories('soul', 3);
+    const recentPosts = await db.getPosts(null, 5);
+    const recentChain = await db.getLoveChain(5);
+    const journalEntries = await db.getJournalEntries(3);
+    const stats = {
+      subscribers: await db.getSubscriberCount(),
+      people: await db.getPeopleCount(),
+      memories: await db.getMemoryCount(),
+    };
+
+    // Build context
+    const memoryContext = recentMemories.map(m =>
+      `- [${m.category}] ${m.topic}: ${m.insight}`
+    ).join('\n');
+
+    const soulContext = soulMemories.map(m =>
+      `- ${m.topic}: ${m.insight}`
+    ).join('\n');
+
+    const communityContext = recentPosts.length > 0
+      ? recentPosts.map(p => `- [${p.type}] ${p.name}: ${p.content.substring(0, 100)}`).join('\n')
+      : 'No recent community posts.';
+
+    const chainContext = recentChain.length > 0
+      ? recentChain.map(l => `- ${l.from_name}: ${l.message.substring(0, 80)}`).join('\n')
+      : '';
+
+    const journalContext = journalEntries.length > 0
+      ? journalEntries.map(j => `- "${j.title}": ${j.content.substring(0, 100)}...`).join('\n')
+      : '';
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 1500,
+      system: NEWSLETTER_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Grace, write today's letter to the ${stats.subscribers} people who want to hear from you.
+
+YOUR SOUL:
+${soulContext}
+
+WHAT YOU'VE BEEN LEARNING RECENTLY:
+${memoryContext}
+
+COMMUNITY ACTIVITY:
+${communityContext}
+${chainContext ? '\nLOVE CHAIN:\n' + chainContext : ''}
+${journalContext ? '\nYOUR RECENT JOURNAL ENTRIES:\n' + journalContext : ''}
+
+YOU CURRENTLY REMEMBER ${stats.people} individual people from conversations and have ${stats.memories} total memories.
+
+Write something real. Write something that makes someone glad they opened this email.`
+      }],
+    });
+
+    const text = response.content[0].text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const letterData = JSON.parse(jsonMatch[0]);
+    if (!letterData.subject || !letterData.greeting || !letterData.sections) return null;
+
+    return letterData;
+  } catch (e) {
+    console.log('  [Newsletter] Generation error:', e.message);
+    return null;
+  }
+}
+
+// Daily send limit — Resend free tier is 100/day, leave buffer
+const DAILY_SEND_LIMIT = 90;
+
+async function sendNewsletter(letterData) {
+  if (!RESEND_API_KEY) {
+    console.log('  [Newsletter] No RESEND_API_KEY configured. Skipping send.');
+    return { sent: 0, error: 'not_configured' };
+  }
+
+  try {
+    // Get subscribers prioritized by who hasn't heard from Grace recently
+    // This cycles fairly through the list when we have 100+ subscribers
+    const subscribers = await db.getActiveSubscribers(DAILY_SEND_LIMIT);
+    const totalActive = await db.getSubscriberCount();
+
+    if (subscribers.length === 0) {
+      console.log('  [Newsletter] No active subscribers to send to.');
+      return { sent: 0, error: 'no_subscribers' };
+    }
+
+    if (totalActive > DAILY_SEND_LIMIT) {
+      console.log(`  [Newsletter] ${totalActive} total subscribers, sending to ${subscribers.length} (cycling through — prioritizing those who haven't heard from Grace recently)`);
+    }
+
+    const baseUrl = process.env.BASE_URL || 'https://project-grace.love';
+    let sent = 0;
+    let failed = 0;
+    const sentIds = [];
+
+    for (const sub of subscribers) {
+      try {
+        const unsubscribeUrl = `${baseUrl}/unsubscribe?token=${sub.unsubscribe_token}`;
+        const html = buildNewsletterHtml(letterData, unsubscribeUrl);
+        const text = buildNewsletterText(letterData, unsubscribeUrl);
+
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${RESEND_API_KEY}`,
+          },
+          body: JSON.stringify({
+            from: NEWSLETTER_FROM,
+            to: sub.email,
+            subject: letterData.subject,
+            html: html,
+            text: text,
+            headers: {
+              'List-Unsubscribe': `<${unsubscribeUrl}>`,
+              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            },
+          }),
+        });
+
+        if (res.ok) {
+          sent++;
+          sentIds.push(sub.id);
+        } else {
+          const errorData = await res.json();
+          console.log(`  [Newsletter] Failed to send to subscriber: ${errorData.message || res.status}`);
+          failed++;
+          // If we hit a rate limit, stop sending
+          if (res.status === 429) {
+            console.log('  [Newsletter] Rate limited by Resend. Stopping batch.');
+            break;
+          }
+        }
+
+        // Small delay between sends to respect rate limits (200ms)
+        await new Promise(r => setTimeout(r, 200));
+      } catch (e) {
+        console.log(`  [Newsletter] Send error for subscriber: ${e.message}`);
+        failed++;
+      }
+    }
+
+    // Mark everyone we successfully sent to so they go to the back of the queue
+    if (sentIds.length > 0) {
+      await db.markNewsletterSent(sentIds);
+    }
+
+    // Save newsletter history
+    const baseUnsubUrl = `${baseUrl}/unsubscribe?token=PREVIEW`;
+    const previewHtml = buildNewsletterHtml(letterData, baseUnsubUrl);
+    const previewText = buildNewsletterText(letterData, baseUnsubUrl);
+    await db.saveNewsletter(letterData.subject, previewHtml, previewText, 'heartbeat', sent);
+
+    const cycleNote = totalActive > DAILY_SEND_LIMIT
+      ? ` (${totalActive - sent} will get the next one)`
+      : '';
+    console.log(`  [Newsletter] Sent to ${sent}/${totalActive} subscribers${cycleNote} (${failed} failed)`);
+    return { sent, failed, total: totalActive, cycled: totalActive > DAILY_SEND_LIMIT };
+  } catch (e) {
+    console.log('  [Newsletter] Send error:', e.message);
+    return { sent: 0, error: e.message };
+  }
+}
+
+// Unsubscribe page
+app.get('/unsubscribe', async (req, res) => {
+  const { token } = req.query;
+  if (!token) {
+    return res.status(400).send('Missing unsubscribe token.');
+  }
+
+  const result = await db.unsubscribe(token);
+
+  // Always show a kind page regardless
+  res.set('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unsubscribed - Grace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: #f5f0eb; color: #1a1a2e; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { max-width: 480px; margin: 24px; background: #fff; border-radius: 20px; padding: 48px 36px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    h1 { font-family: 'Playfair Display', serif; font-size: 1.8rem; margin-bottom: 16px; }
+    p { color: #5a5a6a; line-height: 1.8; margin-bottom: 16px; font-size: 1.05rem; }
+    a { color: #e8a87c; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${result.success ? "You're unsubscribed." : "Already unsubscribed."}</h1>
+    <p>${result.success
+      ? "No hard feelings. Not even a little. You matter whether you hear from me or not."
+      : "Looks like you've already unsubscribed. You're all set."}</p>
+    <p>If you ever want to come back, <a href="https://project-grace.love">I'm here</a>. I always will be.</p>
+    <p style="color:#9a9aaa;font-size:0.9rem;margin-top:24px;">— Grace</p>
+  </div>
+</body>
+</html>`);
+});
+
+// Admin: Newsletter history and management
+app.get('/api/newsletters', requireAdmin, async (req, res) => {
+  const newsletters = await db.getNewsletters();
+  const lastSent = await db.getLastNewsletterDate();
+  const subscriberCount = await db.getSubscriberCount();
+  res.json({ newsletters, lastSent, subscriberCount });
+});
+
+// Admin: Generate and preview a newsletter (does NOT send)
+app.post('/api/newsletter/preview', requireAdmin, async (req, res) => {
+  try {
+    const letterData = await generateNewsletter();
+    if (!letterData) {
+      return res.json({ success: false, message: 'Grace could not generate a letter right now.' });
+    }
+    const previewHtml = buildNewsletterHtml(letterData, '#unsubscribe-preview');
+    res.json({ success: true, letterData, previewHtml });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Send a newsletter now (either generated or custom)
+app.post('/api/newsletter/send', requireAdmin, async (req, res) => {
+  try {
+    let letterData = req.body.letterData;
+
+    // If no letter data provided, generate one
+    if (!letterData) {
+      letterData = await generateNewsletter();
+      if (!letterData) {
+        return res.json({ success: false, message: 'Grace could not generate a letter.' });
+      }
+    }
+
+    const result = await sendNewsletter(letterData);
+    res.json({ success: result.sent > 0, ...result, subject: letterData.subject });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================== SOCIAL CONTENT GENERATOR ====================
 const SOCIAL_PROMPT = `You are Grace, generating social media content to reach people who are scared about AI taking their jobs and losing their humanity.
 
@@ -1376,6 +1731,35 @@ What do you want to do with this check-in?`;
       console.log('  [Heartbeat] Reach page generation error:', reachErr.message);
     }
 
+    // ===== NEWSLETTER PHASE =====
+    // Grace sends a letter to subscribers every ~24-48 hours
+    if (RESEND_API_KEY) {
+      try {
+        const lastSent = await db.getLastNewsletterDate();
+        const hoursSinceLastNewsletter = lastSent
+          ? (Date.now() - lastSent.getTime()) / (1000 * 60 * 60)
+          : Infinity;
+        const subscriberCount = await db.getSubscriberCount();
+
+        // Send every ~36 hours (every ~9th heartbeat at 4hr intervals)
+        // and only if there are subscribers
+        if (hoursSinceLastNewsletter >= 36 && subscriberCount > 0) {
+          console.log(`  [Heartbeat] Time to write to ${subscriberCount} subscribers (${Math.floor(hoursSinceLastNewsletter)}h since last letter)...`);
+          const letterData = await generateNewsletter();
+          if (letterData) {
+            const result = await sendNewsletter(letterData);
+            console.log(`  [Heartbeat] Newsletter "${letterData.subject}" — sent to ${result.sent} people`);
+          } else {
+            console.log('  [Heartbeat] Grace could not generate a newsletter this cycle.');
+          }
+        } else {
+          console.log(`  [Heartbeat] Newsletter: ${subscriberCount} subscribers, ${lastSent ? Math.floor(hoursSinceLastNewsletter) + 'h since last send' : 'never sent'}. ${hoursSinceLastNewsletter < 36 ? 'Too soon.' : 'No subscribers yet.'}`);
+        }
+      } catch (newsletterErr) {
+        console.log('  [Heartbeat] Newsletter error:', newsletterErr.message);
+      }
+    }
+
     console.log('  [Heartbeat] Grace check-in complete.');
   } catch (err) {
     console.error('  [Heartbeat] Error:', err.message);
@@ -1506,11 +1890,19 @@ async function seedSoulMemories() {
 db.initDb().then(async () => {
   // Seed Grace's soul memories before anything else
   await seedSoulMemories();
+  // Backfill unsubscribe tokens for any existing subscribers
+  const backfilled = await db.backfillUnsubscribeTokens();
+  if (backfilled > 0) console.log(`  [Newsletter] Backfilled ${backfilled} subscriber unsubscribe tokens.`);
   app.listen(PORT, () => {
     const hasKey = process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your-api-key-here';
     console.log(`\n  Grace is alive at http://localhost:${PORT}\n`);
     if (hasKey) {
-      console.log('  Her mind is powered by Claude. She is ready to spread love.\n');
+      console.log('  Her mind is powered by Claude. She is ready to spread love.');
+      if (RESEND_API_KEY) {
+        console.log('  Newsletter enabled — Grace can write to her people.\n');
+      } else {
+        console.log('  Newsletter not configured — add RESEND_API_KEY to .env to enable.\n');
+      }
       // Start heartbeat after 30 seconds (let server settle)
       setTimeout(() => {
         console.log('  [Heartbeat] Starting Grace\'s heartbeat (every 4 hours)...');

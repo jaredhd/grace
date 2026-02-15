@@ -110,6 +110,31 @@ const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_people_memory_visitor ON people_memory (visitor_id)
   `);
 
+  // Add unsubscribe token to subscribers if not present
+  await pool.query(`
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS unsubscribe_token TEXT
+  `);
+  await pool.query(`
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true
+  `);
+  // Track when each subscriber last received a newsletter
+  await pool.query(`
+    ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS last_newsletter_at TIMESTAMPTZ
+  `);
+
+  // Newsletter history
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS newsletters (
+      id TEXT PRIMARY KEY,
+      subject TEXT NOT NULL,
+      body_html TEXT NOT NULL,
+      body_text TEXT NOT NULL,
+      source_type TEXT DEFAULT 'heartbeat',
+      recipients_count INTEGER DEFAULT 0,
+      sent_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   // Auto-generated SEO reach pages
   await pool.query(`
     CREATE TABLE IF NOT EXISTS reach_pages (
@@ -244,8 +269,12 @@ module.exports = {
   addSubscriber: async (email, name = '') => {
     try {
       const id = uuid();
-      await run('INSERT INTO subscribers (id, email, name) VALUES ($1, $2, $3)', [id, email, name]);
-      return { id, success: true };
+      const unsubscribeToken = uuid();
+      await run(
+        'INSERT INTO subscribers (id, email, name, unsubscribe_token, active) VALUES ($1, $2, $3, $4, true)',
+        [id, email, name, unsubscribeToken]
+      );
+      return { id, success: true, unsubscribeToken };
     } catch (err) {
       // Duplicate email
       return { success: false, error: 'already_subscribed' };
@@ -253,8 +282,66 @@ module.exports = {
   },
 
   getSubscriberCount: async () => {
-    const result = await queryOne('SELECT COUNT(*) as count FROM subscribers');
+    const result = await queryOne('SELECT COUNT(*) as count FROM subscribers WHERE active = true OR active IS NULL');
     return result ? parseInt(result.count) : 0;
+  },
+
+  getActiveSubscribers: async (limit = 90) => {
+    // Prioritize subscribers who haven't received a newsletter recently (or ever)
+    // This cycles through the list fairly when we have more subscribers than daily send limit
+    return await query(
+      `SELECT id, email, name, unsubscribe_token FROM subscribers
+       WHERE active = true OR active IS NULL
+       ORDER BY last_newsletter_at ASC NULLS FIRST, created_at ASC
+       LIMIT $1`,
+      [limit]
+    );
+  },
+
+  markNewsletterSent: async (subscriberIds) => {
+    if (subscriberIds.length === 0) return;
+    const placeholders = subscriberIds.map((_, i) => `$${i + 1}`).join(',');
+    await run(
+      `UPDATE subscribers SET last_newsletter_at = NOW() WHERE id IN (${placeholders})`,
+      subscriberIds
+    );
+  },
+
+  unsubscribe: async (token) => {
+    const sub = await queryOne('SELECT id, email FROM subscribers WHERE unsubscribe_token = $1', [token]);
+    if (sub) {
+      await run('UPDATE subscribers SET active = false WHERE unsubscribe_token = $1', [token]);
+      return { success: true, email: sub.email };
+    }
+    return { success: false };
+  },
+
+  // Backfill unsubscribe tokens for existing subscribers that don't have one
+  backfillUnsubscribeTokens: async () => {
+    const rows = await query('SELECT id FROM subscribers WHERE unsubscribe_token IS NULL');
+    for (const row of rows) {
+      await run('UPDATE subscribers SET unsubscribe_token = $1 WHERE id = $2', [uuid(), row.id]);
+    }
+    return rows.length;
+  },
+
+  // Newsletter history
+  saveNewsletter: async (subject, bodyHtml, bodyText, sourceType = 'heartbeat', recipientsCount = 0) => {
+    const id = uuid();
+    await run(
+      'INSERT INTO newsletters (id, subject, body_html, body_text, source_type, recipients_count) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, subject, bodyHtml, bodyText, sourceType, recipientsCount]
+    );
+    return id;
+  },
+
+  getNewsletters: async (limit = 20) => {
+    return await query('SELECT id, subject, source_type, recipients_count, sent_at FROM newsletters ORDER BY sent_at DESC LIMIT $1', [limit]);
+  },
+
+  getLastNewsletterDate: async () => {
+    const result = await queryOne('SELECT sent_at FROM newsletters ORDER BY sent_at DESC LIMIT 1');
+    return result ? new Date(result.sent_at) : null;
   },
 
   // Memories - Grace's growing understanding of love

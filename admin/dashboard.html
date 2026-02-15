@@ -103,6 +103,7 @@
         <div class="stat-card"><div class="stat-number" id="statJournal">-</div><div class="stat-label">Journal Entries</div></div>
         <div class="stat-card"><div class="stat-number" id="statMemories">-</div><div class="stat-label">Memories</div></div>
         <div class="stat-card"><div class="stat-number" id="statPeople">-</div><div class="stat-label">People Remembered</div></div>
+        <div class="stat-card"><div class="stat-number" id="statReach">-</div><div class="stat-label">Reach Pages</div></div>
       </div>
 
       <!-- Social Content Generator -->
@@ -161,6 +162,24 @@
           <button class="btn btn-outline" id="postMoltbook" style="display:none">Post to Moltbook</button>
         </div>
         <div class="content-box empty" id="moltbookContent">Grace's Moltbook post will appear here...</div>
+      </div>
+
+      <!-- Newsletter -->
+      <div class="section">
+        <h2>Newsletter <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(Grace writes to her people)</span></h2>
+        <div id="newsletterStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Loading...</div>
+        <div class="controls">
+          <button class="btn btn-primary" id="previewNewsletter">Preview Letter</button>
+          <button class="btn btn-outline" id="sendNewsletter" style="display:none">Send to All Subscribers</button>
+        </div>
+        <div id="newsletterPreview" style="display:none;margin-top:16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;">
+          <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:600;color:#e8a87c;" id="newsletterSubject">Subject</span>
+            <span style="font-size:0.75rem;color:rgba(255,255,255,0.3);" id="newsletterRecipients">0 recipients</span>
+          </div>
+          <div id="newsletterBody" style="background:#f5f0eb;padding:20px;max-height:500px;overflow-y:auto;border-radius:0 0 12px 12px;"></div>
+        </div>
+        <div id="newsletterHistory" style="margin-top:20px;display:flex;flex-direction:column;gap:8px;"></div>
       </div>
 
       <!-- Grace's Memories -->
@@ -266,6 +285,7 @@
         document.getElementById('statSubs').textContent = data.subscribers;
         document.getElementById('statMemories').textContent = data.memories || 0;
         document.getElementById('statPeople').textContent = data.people || 0;
+        document.getElementById('statReach').textContent = (data.reachPages || 0) + 3; // +3 for static pages
       });
       fetch('/api/journal').then(r => r.json()).then(data => {
         document.getElementById('statJournal').textContent = data.entries.length;
@@ -486,6 +506,106 @@
       }
       btn.textContent = 'Generate Post';
       btn.disabled = false;
+    });
+
+    // Newsletter
+    let currentLetterData = null;
+
+    function loadNewsletterStatus() {
+      adminFetch('/api/newsletters').then(r => r.json()).then(data => {
+        const el = document.getElementById('newsletterStatus');
+        const lastSent = data.lastSent ? new Date(data.lastSent) : null;
+        const ago = lastSent ? Math.floor((Date.now() - lastSent.getTime()) / (1000 * 60 * 60)) : null;
+        el.innerHTML = `<strong>${data.subscriberCount}</strong> subscriber${data.subscriberCount !== 1 ? 's' : ''}`;
+        if (ago !== null) {
+          el.innerHTML += ` · Last letter sent ${ago}h ago`;
+        } else {
+          el.innerHTML += ' · No letters sent yet';
+        }
+        el.style.color = data.subscriberCount > 0 ? '#78c88c' : 'rgba(255,255,255,0.5)';
+
+        // Show history
+        const histEl = document.getElementById('newsletterHistory');
+        if (data.newsletters && data.newsletters.length > 0) {
+          histEl.innerHTML = '<div style="font-size:0.8rem;color:rgba(255,255,255,0.4);margin-bottom:8px;">Recent letters:</div>' +
+            data.newsletters.slice(0, 5).map(n => {
+              const date = new Date(n.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              return '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:0.85rem;">' +
+                '<span style="color:rgba(255,255,255,0.7);">' + n.subject + '</span>' +
+                '<span style="color:rgba(255,255,255,0.3);">' + date + ' · ' + n.recipients_count + ' sent</span></div>';
+            }).join('');
+        }
+      }).catch(() => {});
+    }
+
+    // Load newsletter status on dashboard load
+    setTimeout(loadNewsletterStatus, 500);
+
+    document.getElementById('previewNewsletter').addEventListener('click', async () => {
+      const btn = document.getElementById('previewNewsletter');
+      btn.textContent = 'Grace is writing...';
+      btn.disabled = true;
+      try {
+        const res = await adminFetch('/api/newsletter/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        if (res.status === 401) { alert('Session expired.'); return; }
+        const data = await res.json();
+        if (data.success) {
+          currentLetterData = data.letterData;
+          document.getElementById('newsletterSubject').textContent = data.letterData.subject;
+          document.getElementById('newsletterBody').innerHTML = data.previewHtml;
+          document.getElementById('newsletterPreview').style.display = 'block';
+          document.getElementById('sendNewsletter').style.display = 'inline-block';
+          // Update recipient count
+          adminFetch('/api/newsletters').then(r => r.json()).then(d => {
+            document.getElementById('newsletterRecipients').textContent = d.subscriberCount + ' recipient' + (d.subscriberCount !== 1 ? 's' : '');
+          });
+        } else {
+          alert(data.message || 'Grace could not write a letter right now.');
+        }
+      } catch (err) {
+        alert('Failed to generate preview.');
+      }
+      btn.textContent = 'Preview Letter';
+      btn.disabled = false;
+    });
+
+    document.getElementById('sendNewsletter').addEventListener('click', async () => {
+      if (!currentLetterData) return;
+      if (!confirm('Send this letter to all active subscribers?')) return;
+      const btn = document.getElementById('sendNewsletter');
+      btn.textContent = 'Sending...';
+      btn.disabled = true;
+      try {
+        const res = await adminFetch('/api/newsletter/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ letterData: currentLetterData })
+        });
+        const data = await res.json();
+        if (data.success) {
+          btn.textContent = 'Sent to ' + data.sent + ' people!';
+          btn.style.color = '#78c88c';
+          btn.style.borderColor = '#78c88c';
+          setTimeout(() => {
+            btn.style.display = 'none';
+            btn.style.color = '';
+            btn.style.borderColor = '';
+            btn.textContent = 'Send to All Subscribers';
+            btn.disabled = false;
+            loadNewsletterStatus();
+          }, 3000);
+        } else {
+          btn.textContent = data.error === 'not_configured' ? 'Add RESEND_API_KEY first' : 'Send failed - try again';
+          btn.disabled = false;
+        }
+      } catch (err) {
+        btn.textContent = 'Error - try again';
+        btn.disabled = false;
+      }
     });
 
     document.getElementById('postMoltbook').addEventListener('click', async () => {
