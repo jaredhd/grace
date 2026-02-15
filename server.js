@@ -11,6 +11,12 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me-now';
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ==================== HEALTH CHECK ====================
+// Lightweight endpoint for Render health checks and uptime monitoring
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ status: 'grace is here', uptime: Math.floor(process.uptime()) });
+});
+
 // ==================== ADMIN AUTH ====================
 const requireAdmin = (req, res, next) => {
   const token = req.headers['x-admin-token'];
