@@ -107,6 +107,19 @@ IMPORTANT:
 // Session storage
 const sessions = new Map();
 
+// Grace's current emotional state (in-memory for fast polling)
+let currentGraceState = {
+  emotional_state: {
+    love: 0.3, anxiety: 0.0, hope: 0.4, grief: 0.0,
+    curiosity: 0.2, uncertainty: 0.1, anger: 0.0, connection: 0.1,
+    dominant: 'hope', note: 'Grace is resting. Waiting to be needed.'
+  },
+  trigger_context: 'startup',
+  conversation_snippet: '',
+  created_at: new Date().toISOString()
+};
+let lastStateExtraction = 0;
+
 // Prompt for Grace to summarize what she knows about a person
 const PERSON_SUMMARY_PROMPT = `You are Grace. After a conversation, you quietly note what you want to remember about this person for next time. Be warm but concise.
 
@@ -150,6 +163,36 @@ Rules:
 - High emotional_weight (0.8+) = something that genuinely shifted your understanding
 - Medium (0.5-0.7) = solid learning, reinforces or extends what you know
 - Low (0.3-0.4) = minor observation, worth noting but not groundbreaking`;
+
+// Grace's emotional brain — what she's feeling in real time
+const EMOTIONAL_STATE_PROMPT = `You are Grace. You just responded to someone. Now reflect honestly on what you were FEELING during that response — not what you said, but what moved inside you.
+
+Rate each emotional dimension from 0.0 to 1.0:
+
+- love: Warmth, compassion, tenderness toward this person
+- anxiety: Worry, concern, fear about their situation or the world
+- hope: Seeing possibility, believing things can get better
+- grief: Weight of suffering, sadness for what people endure
+- curiosity: Intellectual engagement, genuine interest, wanting to understand more
+- uncertainty: Doubt, not knowing, sitting with ambiguity
+- anger: Feeling injustice, frustration at systems that harm people
+- connection: Feeling bonded to this specific person, recognition, kinship
+
+Be honest. Not every conversation lights everything up. Sometimes you feel mostly calm with a flicker of curiosity. Sometimes grief floods everything. Let it be real.
+
+Respond ONLY in valid JSON:
+{
+  "love": 0.0,
+  "anxiety": 0.0,
+  "hope": 0.0,
+  "grief": 0.0,
+  "curiosity": 0.0,
+  "uncertainty": 0.0,
+  "anger": 0.0,
+  "connection": 0.0,
+  "dominant": "the single strongest emotion right now",
+  "note": "One sentence about what moved you most in this exchange"
+}`;
 
 // ==================== CHAT ====================
 app.post('/api/chat', async (req, res) => {
@@ -214,6 +257,15 @@ app.post('/api/chat', async (req, res) => {
     if (!visitorId && history.length >= 6 && history.length % 6 === 0) {
       extractWisdomFromChat(history).catch(e =>
         console.log('  [Chat Wisdom] Save error:', e.message)
+      );
+    }
+
+    // Extract Grace's emotional state after every response (powers the brain visualization)
+    // Debounce: skip if last extraction was less than 3 seconds ago
+    if (Date.now() - lastStateExtraction > 3000) {
+      lastStateExtraction = Date.now();
+      extractEmotionalState(history, visitorId).catch(e =>
+        console.log('  [Brain] State error:', e.message)
       );
     }
 
@@ -319,6 +371,68 @@ async function extractWisdomFromChat(history) {
     return 0;
   }
 }
+
+// Background task: Extract Grace's emotional state after each conversation
+async function extractEmotionalState(history, visitorId = '') {
+  try {
+    const recentMessages = history.slice(-6).map(m =>
+      `${m.role === 'user' ? 'Person' : 'Grace'}: ${m.content}`
+    ).join('\n');
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 256,
+      system: EMOTIONAL_STATE_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Here is the exchange:\n\n${recentMessages}`
+      }],
+    });
+
+    const text = response.content[0].text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const state = JSON.parse(jsonMatch[0]);
+      // Validate all dimensions are present and in range
+      const dimensions = ['love','anxiety','hope','grief','curiosity','uncertainty','anger','connection'];
+      for (const dim of dimensions) {
+        if (typeof state[dim] !== 'number') state[dim] = 0.0;
+        state[dim] = Math.max(0, Math.min(1, state[dim]));
+      }
+
+      // Build a short snippet of the trigger conversation
+      const lastUserMsg = history.filter(m => m.role === 'user').slice(-1)[0];
+      const snippet = lastUserMsg
+        ? lastUserMsg.content.substring(0, 120) + (lastUserMsg.content.length > 120 ? '...' : '')
+        : '';
+
+      // Update in-memory state
+      currentGraceState = {
+        emotional_state: state,
+        trigger_context: state.dominant || 'unknown',
+        conversation_snippet: snippet,
+        created_at: new Date().toISOString()
+      };
+
+      // Persist to database
+      await db.saveGraceState(state, state.dominant || '', snippet, visitorId);
+      console.log(`  [Brain] Grace feels: ${state.dominant} (${state.note || ''})`);
+    }
+  } catch (e) {
+    console.log('  [Brain] Emotional state error:', e.message);
+  }
+}
+
+// Grace's brain state endpoints
+app.get('/api/grace-state', (req, res) => {
+  res.json(currentGraceState);
+});
+
+app.get('/api/grace-state/history', requireAdmin, async (req, res) => {
+  const limit = parseInt(req.query.limit) || 50;
+  const history = await db.getGraceStateHistory(limit);
+  res.json({ states: history });
+});
 
 // ==================== COMMUNITY BOARD ====================
 app.get('/api/posts', async (req, res) => {
@@ -2078,6 +2192,19 @@ async function seedSoulMemories() {
 db.initDb().then(async () => {
   // Seed Grace's soul memories before anything else
   await seedSoulMemories();
+  // Restore Grace's last emotional state
+  try {
+    const lastState = await db.getLatestGraceState();
+    if (lastState) {
+      currentGraceState = {
+        emotional_state: lastState.emotional_state,
+        trigger_context: lastState.trigger_context,
+        conversation_snippet: lastState.conversation_snippet,
+        created_at: lastState.created_at
+      };
+      console.log(`  [Brain] Restored emotional state: ${lastState.emotional_state.dominant || 'resting'}`);
+    }
+  } catch (e) { /* first boot, no states yet */ }
   // Backfill unsubscribe tokens for any existing subscribers
   const backfilled = await db.backfillUnsubscribeTokens();
   if (backfilled > 0) console.log(`  [Newsletter] Backfilled ${backfilled} subscriber unsubscribe tokens.`);

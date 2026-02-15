@@ -65,7 +65,10 @@
 
     .dashboard-content { display: none; }
 
-    @media (max-width: 768px) { .platform-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 768px) {
+      .platform-grid { grid-template-columns: 1fr; }
+      .brain-grid { grid-template-columns: 1fr !important; }
+    }
   </style>
 </head>
 <body>
@@ -104,6 +107,28 @@
         <div class="stat-card"><div class="stat-number" id="statMemories">-</div><div class="stat-label">Memories</div></div>
         <div class="stat-card"><div class="stat-number" id="statPeople">-</div><div class="stat-label">People Remembered</div></div>
         <div class="stat-card"><div class="stat-number" id="statReach">-</div><div class="stat-label">Reach Pages</div></div>
+      </div>
+
+      <!-- Grace's Brain -->
+      <div class="section" id="brainSection">
+        <h2>Grace's Brain <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(What she's feeling right now)</span></h2>
+        <div class="brain-grid" style="display:grid;grid-template-columns:1fr 240px;gap:24px;align-items:start;">
+          <div style="background:rgba(0,0,0,0.3);border-radius:20px;padding:20px;position:relative;overflow:hidden;">
+            <canvas id="brainCanvas" width="600" height="400" style="width:100%;height:auto;display:block;"></canvas>
+            <div id="brainNote" style="text-align:center;color:rgba(255,255,255,0.4);font-size:0.85rem;font-style:italic;margin-top:12px;">Grace is resting...</div>
+          </div>
+          <div>
+            <div id="emotionBars" style="display:flex;flex-direction:column;gap:8px;"></div>
+            <div style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-top:16px;">
+              <div id="brainTrigger" style="margin-bottom:4px;">Triggered by: --</div>
+              <div id="brainTimestamp">Last update: --</div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:16px;background:rgba(0,0,0,0.2);border-radius:12px;padding:12px 16px;">
+          <div style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-bottom:6px;">Emotional trajectory</div>
+          <canvas id="brainTimeline" width="900" height="120" style="width:100%;height:60px;display:block;"></canvas>
+        </div>
       </div>
 
       <!-- Conversations with Grace -->
@@ -299,6 +324,8 @@
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('dashboardContent').style.display = 'block';
       loadDashboardData();
+      // Start Grace's brain visualization
+      setTimeout(initBrain, 100);
     }
 
     function loadDashboardData() {
@@ -532,6 +559,256 @@
 
     // Load builder chats on dashboard load
     setTimeout(loadBuilderChats, 300);
+
+    // ==================== GRACE'S BRAIN ====================
+    const brainCanvas = document.getElementById('brainCanvas');
+    const brainCtx = brainCanvas.getContext('2d');
+    const timelineCanvas = document.getElementById('brainTimeline');
+    const timelineCtx = timelineCanvas.getContext('2d');
+
+    // Retina support
+    function setupCanvas(canvas, ctx) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      canvas._cssWidth = rect.width;
+      canvas._cssHeight = rect.height;
+    }
+
+    // Emotion config: position (relative to canvas), color
+    const EMOTIONS = {
+      love:        { x: 0.35, y: 0.45, color: [232, 168, 124], label: 'Love' },
+      anxiety:     { x: 0.72, y: 0.25, color: [232, 93, 117],  label: 'Anxiety' },
+      hope:        { x: 0.50, y: 0.18, color: [245, 235, 220], label: 'Hope' },
+      grief:       { x: 0.28, y: 0.70, color: [74, 111, 165],  label: 'Grief' },
+      curiosity:   { x: 0.75, y: 0.50, color: [78, 205, 196],  label: 'Curiosity' },
+      uncertainty: { x: 0.68, y: 0.75, color: [155, 109, 255], label: 'Uncertainty' },
+      anger:       { x: 0.48, y: 0.82, color: [192, 57, 43],   label: 'Anger' },
+      connection:  { x: 0.50, y: 0.50, color: [212, 165, 165], label: 'Connection' }
+    };
+
+    const ADJACENT = [
+      ['love','connection'],['love','grief'],['love','hope'],
+      ['hope','curiosity'],['hope','anxiety'],['hope','connection'],
+      ['anxiety','curiosity'],['anxiety','anger'],
+      ['grief','anger'],['grief','uncertainty'],
+      ['curiosity','uncertainty'],['curiosity','connection'],
+      ['anger','uncertainty'],['connection','uncertainty'],['connection','grief']
+    ];
+
+    const EMOTION_COLORS = {
+      love: '#e8a87c', anxiety: '#e85d75', hope: '#f5eedc',
+      grief: '#4a6fa5', curiosity: '#4ecdc4', uncertainty: '#9b6dff',
+      anger: '#c0392b', connection: '#d4a5a5'
+    };
+
+    let brainCurrentValues = {};
+    let brainTargetValues = {};
+    Object.keys(EMOTIONS).forEach(k => { brainCurrentValues[k] = 0.1; brainTargetValues[k] = 0.1; });
+
+    let brainParticles = [];
+    let brainTime = 0;
+    let brainStateHistory = [];
+
+    function drawBrain() {
+      const W = brainCanvas._cssWidth || 600;
+      const H = brainCanvas._cssHeight || 400;
+      brainCtx.clearRect(0, 0, W, H);
+      brainTime += 0.016;
+
+      // Breathing
+      const breathe = 1.0 + Math.sin(brainTime * 1.5) * 0.012;
+      brainCtx.save();
+      brainCtx.translate(W / 2, H / 2);
+      brainCtx.scale(breathe, breathe);
+      brainCtx.translate(-W / 2, -H / 2);
+
+      // Brain outline
+      brainCtx.beginPath();
+      brainCtx.moveTo(W * 0.50, H * 0.08);
+      brainCtx.bezierCurveTo(W * 0.70, H * 0.05, W * 0.88, H * 0.20, W * 0.85, H * 0.40);
+      brainCtx.bezierCurveTo(W * 0.90, H * 0.55, W * 0.82, H * 0.72, W * 0.72, H * 0.85);
+      brainCtx.bezierCurveTo(W * 0.60, H * 0.92, W * 0.40, H * 0.92, W * 0.28, H * 0.85);
+      brainCtx.bezierCurveTo(W * 0.18, H * 0.72, W * 0.10, H * 0.55, W * 0.15, H * 0.40);
+      brainCtx.bezierCurveTo(W * 0.12, H * 0.20, W * 0.30, H * 0.05, W * 0.50, H * 0.08);
+      brainCtx.closePath();
+      brainCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+      brainCtx.lineWidth = 1;
+      brainCtx.stroke();
+      brainCtx.fillStyle = 'rgba(255,255,255,0.012)';
+      brainCtx.fill();
+
+      // Emotion regions
+      Object.entries(EMOTIONS).forEach(([key, cfg]) => {
+        const val = brainCurrentValues[key];
+        if (val < 0.02) return;
+        const cx = cfg.x * W, cy = cfg.y * H;
+        const radius = 35 + val * 55;
+        const [r, g, b] = cfg.color;
+        const pulseRate = 0.8 + val * 1.5;
+        const pulse = 1.0 + Math.sin(brainTime * pulseRate + cfg.x * 10) * 0.08 * val;
+        const alpha = (0.05 + val * 0.5) * pulse;
+
+        const grad = brainCtx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.5);
+        grad.addColorStop(0, 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')');
+        grad.addColorStop(0.5, 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.35) + ')');
+        grad.addColorStop(1, 'rgba(' + r + ',' + g + ',' + b + ',0)');
+        brainCtx.fillStyle = grad;
+        brainCtx.fillRect(cx - radius * 1.5, cy - radius * 1.5, radius * 3, radius * 3);
+
+        if (val > 0.15) {
+          brainCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + Math.min(val * 1.2, 0.7) + ')';
+          brainCtx.font = '9px Inter, sans-serif';
+          brainCtx.textAlign = 'center';
+          brainCtx.fillText(cfg.label, cx, cy + radius * 0.55);
+        }
+      });
+
+      // Connection filaments
+      ADJACENT.forEach(([a, b]) => {
+        const va = brainCurrentValues[a], vb = brainCurrentValues[b];
+        if (va < 0.25 || vb < 0.25) return;
+        const ea = EMOTIONS[a], eb = EMOTIONS[b];
+        const alpha = va * vb * 0.25;
+        const mx = (ea.x + eb.x) / 2 * W + Math.sin(brainTime + ea.x * 7) * 8;
+        const my = (ea.y + eb.y) / 2 * H + Math.cos(brainTime + eb.y * 7) * 8;
+        brainCtx.beginPath();
+        brainCtx.moveTo(ea.x * W, ea.y * H);
+        brainCtx.quadraticCurveTo(mx, my, eb.x * W, eb.y * H);
+        brainCtx.strokeStyle = 'rgba(255,255,255,' + alpha + ')';
+        brainCtx.lineWidth = 0.5;
+        brainCtx.stroke();
+      });
+
+      // Particles
+      Object.entries(EMOTIONS).forEach(([key, cfg]) => {
+        const val = brainCurrentValues[key];
+        const maxP = Math.floor(val * 5);
+        const existing = brainParticles.filter(p => p.emotion === key);
+        if (existing.length < maxP && Math.random() < 0.04) {
+          brainParticles.push({
+            emotion: key, x: cfg.x * W + (Math.random() - 0.5) * 50,
+            y: cfg.y * H + (Math.random() - 0.5) * 50,
+            vx: (Math.random() - 0.5) * 0.25, vy: (Math.random() - 0.5) * 0.25,
+            life: 1.0, decay: 0.004 + Math.random() * 0.006, size: 1 + Math.random() * 1.5
+          });
+        }
+      });
+      brainParticles = brainParticles.filter(p => {
+        p.x += p.vx; p.y += p.vy; p.life -= p.decay;
+        if (p.life <= 0) return false;
+        const [r, g, b] = EMOTIONS[p.emotion].color;
+        brainCtx.beginPath();
+        brainCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        brainCtx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (p.life * 0.5) + ')';
+        brainCtx.fill();
+        return true;
+      });
+
+      brainCtx.restore();
+
+      // Lerp toward targets
+      const speed = 0.03;
+      Object.keys(EMOTIONS).forEach(k => {
+        brainCurrentValues[k] += (brainTargetValues[k] - brainCurrentValues[k]) * speed;
+      });
+
+      requestAnimationFrame(drawBrain);
+    }
+
+    function renderEmotionBars(state) {
+      const container = document.getElementById('emotionBars');
+      const order = ['love','hope','connection','curiosity','anxiety','grief','uncertainty','anger'];
+      container.innerHTML = order.map(key => {
+        const val = state[key] || 0;
+        const pct = Math.round(val * 100);
+        const color = EMOTION_COLORS[key];
+        return '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<span style="font-size:0.7rem;color:rgba(255,255,255,0.45);width:68px;text-align:right;">' + EMOTIONS[key].label + '</span>' +
+          '<div style="flex:1;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">' +
+          '<div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:3px;transition:width 1.5s ease;"></div></div>' +
+          '<span style="font-size:0.65rem;color:rgba(255,255,255,0.25);width:24px;">' + pct + '%</span></div>';
+      }).join('');
+    }
+
+    function drawTimeline(history) {
+      const dpr = window.devicePixelRatio || 1;
+      const W = timelineCanvas._cssWidth || 900;
+      const H = timelineCanvas._cssHeight || 60;
+      timelineCtx.clearRect(0, 0, W, H);
+      if (history.length < 2) return;
+      const emotions = ['love','anxiety','hope','grief','curiosity','uncertainty','anger','connection'];
+      const step = W / (history.length - 1);
+      emotions.forEach(emotion => {
+        const [r, g, b] = EMOTIONS[emotion].color;
+        timelineCtx.beginPath();
+        history.forEach((s, i) => {
+          const x = i * step;
+          const val = (s.emotional_state || s)[emotion] || 0;
+          const y = H - (val * H * 0.85) - H * 0.05;
+          if (i === 0) timelineCtx.moveTo(x, y); else timelineCtx.lineTo(x, y);
+        });
+        timelineCtx.strokeStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.5)';
+        timelineCtx.lineWidth = 1.5;
+        timelineCtx.stroke();
+      });
+    }
+
+    function getTimeAgo(date) {
+      const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+      if (seconds < 60) return 'just now';
+      if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+      if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+      return Math.floor(seconds / 86400) + 'd ago';
+    }
+
+    async function pollBrainState() {
+      try {
+        const res = await fetch('/api/grace-state');
+        const state = await res.json();
+        if (state && state.emotional_state) {
+          Object.keys(EMOTIONS).forEach(k => {
+            brainTargetValues[k] = state.emotional_state[k] || 0;
+          });
+          renderEmotionBars(state.emotional_state);
+
+          document.getElementById('brainNote').textContent = state.emotional_state.note || 'Grace is resting...';
+
+          const trigEl = document.getElementById('brainTrigger');
+          trigEl.textContent = state.conversation_snippet
+            ? 'Someone said: "' + state.conversation_snippet.substring(0, 70) + (state.conversation_snippet.length > 70 ? '..."' : '"')
+            : 'Triggered by: --';
+
+          if (state.created_at) {
+            document.getElementById('brainTimestamp').textContent = 'Last update: ' + getTimeAgo(state.created_at);
+          }
+        }
+      } catch (e) { /* silent */ }
+    }
+
+    async function loadBrainHistory() {
+      try {
+        const res = await adminFetch('/api/grace-state/history?limit=20');
+        if (res.status === 401) return;
+        const data = await res.json();
+        if (data.states && data.states.length > 0) {
+          brainStateHistory = data.states.reverse();
+          drawTimeline(brainStateHistory);
+        }
+      } catch (e) {}
+    }
+
+    function initBrain() {
+      setupCanvas(brainCanvas, brainCtx);
+      setupCanvas(timelineCanvas, timelineCtx);
+      drawBrain();
+      pollBrainState();
+      setInterval(pollBrainState, 4000);
+      loadBrainHistory();
+      setInterval(loadBrainHistory, 30000);
+    }
 
     // Generate all social content
     document.getElementById('generateAll').addEventListener('click', async () => {

@@ -161,6 +161,21 @@ const initDb = async () => {
     )
   `);
 
+  // Grace's emotional brain states
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grace_states (
+      id TEXT PRIMARY KEY,
+      emotional_state JSONB NOT NULL,
+      trigger_context TEXT DEFAULT '',
+      conversation_snippet TEXT DEFAULT '',
+      visitor_id TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_grace_states_created ON grace_states (created_at DESC)
+  `);
+
   return pool;
 };
 
@@ -498,5 +513,23 @@ module.exports = {
       }
     }
     return allMessages;
+  },
+
+  // Grace's brain — emotional state tracking
+  saveGraceState: async (emotionalState, triggerContext = '', conversationSnippet = '', visitorId = '') => {
+    const id = uuid();
+    await run(
+      'INSERT INTO grace_states (id, emotional_state, trigger_context, conversation_snippet, visitor_id) VALUES ($1, $2, $3, $4, $5)',
+      [id, JSON.stringify(emotionalState), triggerContext, conversationSnippet, visitorId]
+    );
+    return id;
+  },
+
+  getLatestGraceState: async () => {
+    return await queryOne('SELECT * FROM grace_states ORDER BY created_at DESC LIMIT 1');
+  },
+
+  getGraceStateHistory: async (limit = 50) => {
+    return await query('SELECT * FROM grace_states ORDER BY created_at DESC LIMIT $1', [limit]);
   },
 };
