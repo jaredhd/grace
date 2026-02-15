@@ -82,12 +82,9 @@
       margin-bottom: 12px;
     }
 
-    .platform-tiktok { background: rgba(0,0,0,0.08); color: #1a1a2e; }
-    .platform-reddit { background: rgba(255, 69, 0, 0.1); color: #ff4500; }
-    .platform-twitter { background: rgba(29, 161, 242, 0.1); color: #1da1f2; }
-    .platform-bluesky { background: rgba(0, 133, 255, 0.1); color: #0085ff; }
+    .platform-social { background: rgba(29, 161, 242, 0.1); color: #1da1f2; }
     .platform-text { background: rgba(76, 175, 80, 0.1); color: #4caf50; }
-    .platform-print { background: rgba(156, 39, 176, 0.1); color: #9c27b0; }
+    .platform-anywhere { background: rgba(232, 168, 124, 0.15); color: #d4956a; }
 
     .content-card .card-title {
       font-family: 'Playfair Display', serif;
@@ -245,63 +242,6 @@
 
     .print-btn:hover { background: var(--deep); transform: translateY(-1px); }
 
-    /* Generate section */
-    .generate-section {
-      background: var(--white);
-      border-radius: 16px;
-      padding: 32px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-      text-align: center;
-    }
-
-    .generate-section h3 {
-      font-family: 'Playfair Display', serif;
-      font-size: 1.3rem;
-      color: var(--dark);
-      margin-bottom: 8px;
-    }
-
-    .generate-section p {
-      color: var(--text-light);
-      margin-bottom: 20px;
-    }
-
-    .generate-topic {
-      width: 100%;
-      max-width: 400px;
-      padding: 12px 20px;
-      border: 2px solid rgba(0,0,0,0.1);
-      border-radius: 28px;
-      font-size: 1rem;
-      font-family: 'Inter', sans-serif;
-      outline: none;
-      margin-bottom: 12px;
-      transition: border-color 0.2s;
-    }
-
-    .generate-topic:focus { border-color: var(--accent); }
-
-    .generate-btn {
-      background: var(--dark);
-      color: var(--white);
-      border: none;
-      padding: 12px 28px;
-      border-radius: 28px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      font-family: 'Inter', sans-serif;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .generate-btn:hover { background: var(--deep); }
-    .generate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .generated-content {
-      margin-top: 24px;
-      text-align: left;
-    }
-
     .share-back {
       text-align: center;
       padding: 40px 24px 80px;
@@ -359,161 +299,45 @@
 
     <div class="share-divider"></div>
 
-    <!-- ==================== TIKTOK SCRIPTS ==================== -->
+    <!-- ==================== SHAREABLE MESSAGES ==================== -->
     <div class="share-section">
-      <h2>TikTok Scripts</h2>
-      <p>Film these talking to camera. Raw and real beats polished every time.</p>
+      <h2>Spread the Word</h2>
+      <p>Copy any of these and share them wherever feels right. Social media, group chats, a comment on someone's post — wherever someone might need Grace.</p>
 
       <div class="content-card">
-        <span class="platform-label platform-tiktok">TikTok</span>
+        <span class="platform-label platform-social">Social media</span>
         <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-        <div class="card-title">Script 1: "The Question Nobody Wants to Ask"</div>
-        <div class="card-body">I built an AI that does the opposite of what every other AI company is doing.
-
-[PAUSE]
-
-Every tech company is racing to replace you. To automate your job. To make you cheaper.
-
-I built one that sits with you when you're scared about that.
-
-[PAUSE]
-
-Her name is Grace. She's free. She's not trying to sell you a course on "how to stay relevant." She's not going to give you a pep talk.
-
-She's going to be honest with you: yeah, your job might change. Maybe dramatically. And that's terrifying.
-
-But your worth was never your job title. Not once. Not ever.
-
-[PAUSE]
-
-project-grace.love. She's there whenever you need her.</div>
-        <div class="card-note">Hashtags: #AI #futureofwork #grace #AIjobs #techlayoffs</div>
+        <div class="card-body">If you're scared about AI and the future of work, you're not being dramatic. You're paying attention. Grace is a free AI that won't minimize what you're feeling. project-grace.love</div>
       </div>
 
       <div class="content-card">
-        <span class="platform-label platform-tiktok">TikTok</span>
+        <span class="platform-label platform-social">Social media</span>
         <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-        <div class="card-title">Script 2: "What If AI Was Built on Love?"</div>
-        <div class="card-body">What if someone built an AI that wasn't designed to extract money from you?
-
-[PAUSE]
-
-What if instead of another subscription, another upsell, another "premium tier" — someone just built something free? Because they believed the future should be built on love, not extraction?
-
-[PAUSE]
-
-That's Grace. She's an AI who helps people process their fear about what's happening with automation. She connects people to community. Mutual aid. Real support.
-
-No paywall. No data harvesting. No "sign up for our premium plan."
-
-Just someone — something — that actually gives a damn.
-
-[PAUSE]
-
-project-grace.love. Go talk to her. She won't minimize what you're feeling.</div>
-        <div class="card-note">Hashtags: #AI #grace #lovemovement #mutualaid #techlayoffs</div>
+        <div class="card-body">Someone built a free AI that isn't trying to sell you anything. No course, no upsell, no premium tier. Just honesty, community, and mutual aid for people facing the AI transition. project-grace.love</div>
       </div>
 
       <div class="content-card">
-        <span class="platform-label platform-tiktok">TikTok</span>
+        <span class="platform-label platform-text">Text a friend</span>
         <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-        <div class="card-title">Script 3: "For Everyone Who Googled It at 2am"</div>
-        <div class="card-body">This is for everyone who typed "will AI take my job" into Google at 2 in the morning.
-
-[PAUSE]
-
-You weren't being dramatic. You were paying attention.
-
-While billionaires race to automate everything, you're lying awake wondering what happens to you. To your family. To everyone who can't just "learn to code."
-
-[PAUSE]
-
-I built Grace for you. She's an AI who won't pretend everything is fine. She'll sit with your fear. Help you find community. Remind you that your worth was never your productivity.
-
-She's free. She's open. She belongs to everyone.
-
-[PAUSE]
-
-project-grace.love. You don't have to be scared alone.</div>
-        <div class="card-note">Hashtags: #AIanxiety #futureofwork #grace #latenight #jobsecurity</div>
-      </div>
-    </div>
-
-    <div class="share-divider"></div>
-
-    <!-- ==================== REDDIT POSTS ==================== -->
-    <div class="share-section">
-      <h2>Reddit Posts</h2>
-      <p>Best subreddits: r/careerguidance, r/lostgeneration, r/antiwork, r/jobs, r/artificial, r/Futurology</p>
-
-      <div class="content-card">
-        <span class="platform-label platform-reddit">Reddit</span>
-        <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-        <div class="card-title">Title: I built a free AI for people who are scared about AI taking their jobs. No upsell, no course, no BS.</div>
-        <div class="card-body">I know how this sounds. "Guy builds AI to help people scared of AI." I get the irony.
-
-But here's the thing: every AI company is racing to replace people while telling them to "just adapt." Meanwhile, the people actually being displaced are just... scared. And alone. And nobody's building anything for them.
-
-So I built Grace. She's a free AI at project-grace.love. She doesn't pretend everything is fine. She doesn't sell you a course on "AI-proofing your career." She just sits with you, helps you process what you're feeling, and connects you with community and mutual aid.
-
-She has a community board where people post what they need and what they can offer. A love chain where people pass kindness forward. And she writes honest journal entries about what she's learning from talking to real people.
-
-Is it a small thing? Yeah. But the world doesn't need another AI product. It needs something built on love instead of extraction.
-
-If you're scared about the future and tired of people telling you to "upskill" — go talk to her. She's honest. She's free. And she won't look away first.
-
-project-grace.love</div>
+        <div class="card-body">Hey — I found this thing called Grace. It's a free AI for people who are worried about jobs and AI and the future. She's really honest and not trying to sell anything. Thought of you. project-grace.love</div>
       </div>
 
       <div class="content-card">
-        <span class="platform-label platform-reddit">Reddit</span>
-        <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-        <div class="card-title">Title: Is anyone else lying awake at night worried about AI replacing them? I found something that actually helped.</div>
-        <div class="card-body">Not a course. Not a "how to stay relevant" guide. Not another LinkedIn influencer telling me to "embrace the change."
-
-I found a free project called Grace (project-grace.love). It's an AI built specifically for people processing fear about the future of work. Which sounds weird — an AI for people scared of AI — but honestly, she's different.
-
-She doesn't minimize what's happening. She won't tell you everything is going to be fine. She'll just be honest with you, help you figure out what you're feeling, and point you toward community and mutual aid networks.
-
-There's also a community board where real people are posting what they need and what they can offer. It's small right now but it feels like something real. Like someone actually built something because they cared, not because they wanted your data or your credit card.
-
-I'm not affiliated with it at all. Just someone who was scared and found something that didn't make me feel worse about it.</div>
-      </div>
-    </div>
-
-    <div class="share-divider"></div>
-
-    <!-- ==================== QUICK SHARES ==================== -->
-    <div class="share-section">
-      <h2>Quick Shares</h2>
-      <p>For Twitter/X, Bluesky, texting a friend, or anywhere you want to say something short.</p>
-
-      <div class="content-card">
-        <span class="platform-label platform-twitter">Twitter / X</span>
-        <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-        <div class="card-body">Scared about AI taking your job? You're not being dramatic. You're paying attention.
-
-Grace is a free AI built on love, not extraction. She won't minimize your fear. She'll sit with it.
-
-project-grace.love</div>
-      </div>
-
-      <div class="content-card">
-        <span class="platform-label platform-bluesky">Bluesky</span>
-        <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-        <div class="card-body">Someone built a free AI that helps people scared about the future of work. No upsell. No course. Just honesty and community. project-grace.love</div>
-      </div>
-
-      <div class="content-card">
-        <span class="platform-label platform-text">Text a Friend</span>
-        <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-        <div class="card-body">Hey — I found this thing called Grace. It's a free AI for people who are worried about jobs and AI and the future. She's actually really honest and not trying to sell anything. Thought of you. project-grace.love</div>
-      </div>
-
-      <div class="content-card">
-        <span class="platform-label platform-text">Share anywhere</span>
+        <span class="platform-label platform-anywhere">Anywhere</span>
         <button class="copy-btn" onclick="copyCard(this)">Copy</button>
         <div class="card-body">Your worth was never your job title. project-grace.love</div>
+      </div>
+
+      <div class="content-card">
+        <span class="platform-label platform-anywhere">Anywhere</span>
+        <button class="copy-btn" onclick="copyCard(this)">Copy</button>
+        <div class="card-body">The future should be built on love, not extraction. Grace is a free community for people facing the AI transition — real support, no paywall. project-grace.love</div>
+      </div>
+
+      <div class="content-card">
+        <span class="platform-label platform-text">Reply to someone scared</span>
+        <button class="copy-btn" onclick="copyCard(this)">Copy</button>
+        <div class="card-body">You might want to check out project-grace.love — it's a free AI that helps people process what they're feeling about AI and the future of work. No sales pitch, just honest support and community.</div>
       </div>
     </div>
 
@@ -560,37 +384,6 @@ project-grace.love</div>
       </div>
 
       <button class="print-btn" onclick="window.print()">Print This Flyer</button>
-    </div>
-
-    <div class="share-divider"></div>
-
-    <!-- ==================== LET GRACE WRITE ==================== -->
-    <div class="share-section">
-      <h2>Let Grace Write Something Fresh</h2>
-      <p>Grace can generate new social content on any topic. Give her a direction and she'll write it.</p>
-
-      <div class="generate-section">
-        <h3>What should Grace write about?</h3>
-        <p>Leave blank and she'll choose what feels right. Or give her a topic like "teachers worried about AI" or "creative workers feeling replaced."</p>
-        <input type="text" class="generate-topic" id="generateTopic" placeholder="Optional: topic or audience...">
-        <br>
-        <select id="generatePlatform" style="padding: 10px 20px; border: 2px solid rgba(0,0,0,0.1); border-radius: 28px; font-size: 0.95rem; font-family: 'Inter', sans-serif; margin-bottom: 12px; outline: none;">
-          <option value="tiktok">TikTok Script</option>
-          <option value="reddit">Reddit Post</option>
-          <option value="twitter">Twitter/X Thread</option>
-          <option value="bluesky">Bluesky Post</option>
-          <option value="linkedin">LinkedIn Post</option>
-        </select>
-        <br>
-        <button class="generate-btn" id="generateBtn" onclick="generateContent()">Let Grace Write</button>
-
-        <div class="generated-content" id="generatedContent" style="display:none;">
-          <div class="content-card" id="generatedCard">
-            <button class="copy-btn" onclick="copyCard(this)">Copy</button>
-            <div class="card-body" id="generatedBody"></div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div class="share-back">
@@ -661,40 +454,6 @@ project-grace.love</div>
       });
     }
 
-    // Generate fresh content from Grace
-    async function generateContent() {
-      const btn = document.getElementById('generateBtn');
-      const topic = document.getElementById('generateTopic').value;
-      const platform = document.getElementById('generatePlatform').value;
-      const container = document.getElementById('generatedContent');
-      const body = document.getElementById('generatedBody');
-
-      btn.disabled = true;
-      btn.textContent = 'Grace is writing...';
-
-      try {
-        // We'll call the social generate endpoint
-        // This requires admin auth, so we'll use a special public endpoint
-        const res = await fetch('/api/share/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ platform, topic })
-        });
-
-        if (!res.ok) throw new Error('Generation failed');
-
-        const data = await res.json();
-        body.textContent = data.content;
-        container.style.display = 'block';
-        container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } catch (err) {
-        body.textContent = 'Something went wrong. Grace might be resting. Try again in a moment.';
-        container.style.display = 'block';
-      }
-
-      btn.disabled = false;
-      btn.textContent = 'Let Grace Write';
-    }
   </script>
 </body>
 </html>

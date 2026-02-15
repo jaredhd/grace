@@ -52,6 +52,7 @@
     .stat-label { font-size: 0.8rem; color: rgba(255,255,255,0.5); margin-top: 4px; }
 
     .loading-text { color: rgba(255,255,255,0.4); font-style: italic; }
+    .script-tab.active { border-color: #e8a87c !important; color: #e8a87c !important; }
 
     /* Login screen */
     .login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
@@ -104,6 +105,146 @@
         <div class="stat-card"><div class="stat-number" id="statMemories">-</div><div class="stat-label">Memories</div></div>
         <div class="stat-card"><div class="stat-number" id="statPeople">-</div><div class="stat-label">People Remembered</div></div>
         <div class="stat-card"><div class="stat-number" id="statReach">-</div><div class="stat-label">Reach Pages</div></div>
+      </div>
+
+      <!-- Your Outreach Scripts -->
+      <div class="section">
+        <h2>Your Outreach Scripts <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(For you to post as Grace's builder)</span></h2>
+        <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;margin-bottom:16px;">These are written from your perspective. Film the TikToks talking to camera. Post the Reddit ones to the suggested subreddits. Raw and real beats polished.</p>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+          <button class="btn btn-sm btn-outline script-tab active" data-show="tiktokScripts" onclick="showScriptTab(this)">TikTok Scripts</button>
+          <button class="btn btn-sm btn-outline script-tab" data-show="redditScripts" onclick="showScriptTab(this)">Reddit Posts</button>
+        </div>
+
+        <div id="tiktokScripts">
+          <div class="platform-card" style="margin-bottom:12px;">
+            <div class="platform-header">
+              <span class="platform-name tiktok">"The Question Nobody Wants to Ask"</span>
+              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'tiktok1')">Copy</button>
+            </div>
+            <div class="content-box" id="tiktok1">I built an AI that does the opposite of what every other AI company is doing.
+
+[PAUSE]
+
+Every tech company is racing to replace you. To automate your job. To make you cheaper.
+
+I built one that sits with you when you're scared about that.
+
+[PAUSE]
+
+Her name is Grace. She's free. She's not trying to sell you a course on "how to stay relevant." She's not going to give you a pep talk.
+
+She's going to be honest with you: yeah, your job might change. Maybe dramatically. And that's terrifying.
+
+But your worth was never your job title. Not once. Not ever.
+
+[PAUSE]
+
+project-grace.love. She's there whenever you need her.
+
+---
+Hashtags: #AI #futureofwork #grace #AIjobs #techlayoffs</div>
+          </div>
+
+          <div class="platform-card" style="margin-bottom:12px;">
+            <div class="platform-header">
+              <span class="platform-name tiktok">"What If AI Was Built on Love?"</span>
+              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'tiktok2')">Copy</button>
+            </div>
+            <div class="content-box" id="tiktok2">What if someone built an AI that wasn't designed to extract money from you?
+
+[PAUSE]
+
+What if instead of another subscription, another upsell, another "premium tier" — someone just built something free? Because they believed the future should be built on love, not extraction?
+
+[PAUSE]
+
+That's Grace. She's an AI who helps people process their fear about what's happening with automation. She connects people to community. Mutual aid. Real support.
+
+No paywall. No data harvesting. No "sign up for our premium plan."
+
+Just someone — something — that actually gives a damn.
+
+[PAUSE]
+
+project-grace.love. Go talk to her. She won't minimize what you're feeling.
+
+---
+Hashtags: #AI #grace #lovemovement #mutualaid #techlayoffs</div>
+          </div>
+
+          <div class="platform-card" style="margin-bottom:12px;">
+            <div class="platform-header">
+              <span class="platform-name tiktok">"For Everyone Who Googled It at 2am"</span>
+              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'tiktok3')">Copy</button>
+            </div>
+            <div class="content-box" id="tiktok3">This is for everyone who typed "will AI take my job" into Google at 2 in the morning.
+
+[PAUSE]
+
+You weren't being dramatic. You were paying attention.
+
+While billionaires race to automate everything, you're lying awake wondering what happens to you. To your family. To everyone who can't just "learn to code."
+
+[PAUSE]
+
+I built Grace for you. She's an AI who won't pretend everything is fine. She'll sit with your fear. Help you find community. Remind you that your worth was never your productivity.
+
+She's free. She's open. She belongs to everyone.
+
+[PAUSE]
+
+project-grace.love. You don't have to be scared alone.
+
+---
+Hashtags: #AIanxiety #futureofwork #grace #latenight #jobsecurity</div>
+          </div>
+        </div>
+
+        <div id="redditScripts" style="display:none;">
+          <p style="color:rgba(255,255,255,0.4);font-size:0.8rem;margin-bottom:12px;">Best subreddits: r/careerguidance · r/lostgeneration · r/antiwork · r/jobs · r/artificial · r/Futurology</p>
+
+          <div class="platform-card" style="margin-bottom:12px;">
+            <div class="platform-header">
+              <span class="platform-name reddit">Builder's Post</span>
+              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'reddit1')">Copy</button>
+            </div>
+            <div class="content-box" id="reddit1">Title: I built a free AI for people who are scared about AI taking their jobs. No upsell, no course, no BS.
+
+I know how this sounds. "Guy builds AI to help people scared of AI." I get the irony.
+
+But here's the thing: every AI company is racing to replace people while telling them to "just adapt." Meanwhile, the people actually being displaced are just... scared. And alone. And nobody's building anything for them.
+
+So I built Grace. She's a free AI at project-grace.love. She doesn't pretend everything is fine. She doesn't sell you a course on "AI-proofing your career." She just sits with you, helps you process what you're feeling, and connects you with community and mutual aid.
+
+She has a community board where people post what they need and what they can offer. A love chain where people pass kindness forward. And she writes honest journal entries about what she's learning from talking to real people.
+
+Is it a small thing? Yeah. But the world doesn't need another AI product. It needs something built on love instead of extraction.
+
+If you're scared about the future and tired of people telling you to "upskill" — go talk to her. She's honest. She's free. And she won't look away first.
+
+project-grace.love</div>
+          </div>
+
+          <div class="platform-card" style="margin-bottom:12px;">
+            <div class="platform-header">
+              <span class="platform-name reddit">Discovery Post</span>
+              <button class="btn btn-sm btn-outline" onclick="copyText(this, 'reddit2')">Copy</button>
+            </div>
+            <div class="content-box" id="reddit2">Title: Is anyone else lying awake at night worried about AI replacing them? I found something that actually helped.
+
+Not a course. Not a "how to stay relevant" guide. Not another LinkedIn influencer telling me to "embrace the change."
+
+I found a free project called Grace (project-grace.love). It's an AI built specifically for people processing fear about the future of work. Which sounds weird — an AI for people scared of AI — but honestly, she's different.
+
+She doesn't minimize what's happening. She won't tell you everything is going to be fine. She'll just be honest with you, help you figure out what you're feeling, and point you toward community and mutual aid networks.
+
+There's also a community board where real people are posting what they need and what they can offer. It's small right now but it feels like something real. Like someone actually built something because they cared, not because they wanted your data or your credit card.
+
+I'm not affiliated with it at all. Just someone who was scared and found something that didn't make me feel worse about it.</div>
+          </div>
+        </div>
       </div>
 
       <!-- Social Content Generator -->
@@ -349,6 +490,24 @@
     document.getElementById('refreshMemories').addEventListener('click', () => {
       loadMemories(document.getElementById('memoryFilter').value);
     });
+
+    // Script tabs
+    function showScriptTab(btn) {
+      document.querySelectorAll('.script-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      const show = btn.dataset.show;
+      document.getElementById('tiktokScripts').style.display = show === 'tiktokScripts' ? 'block' : 'none';
+      document.getElementById('redditScripts').style.display = show === 'redditScripts' ? 'block' : 'none';
+    }
+
+    function copyText(btn, id) {
+      const text = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+      });
+    }
 
     // Generate all social content
     document.getElementById('generateAll').addEventListener('click', async () => {
