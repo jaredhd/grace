@@ -9,7 +9,7 @@ const db = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me-now';
-const GRACE_VOICE = process.env.GRACE_VOICE || 'af_heart';
+const GRACE_VOICE = process.env.GRACE_VOICE || 'en-US-EmmaMultilingualNeural';
 const GRACE_PORTRAIT = path.join(__dirname, 'public', 'grace-portrait.png');
 
 app.use(express.json());
@@ -583,10 +583,11 @@ app.post('/api/journal/:id/heart', async (req, res) => {
 });
 
 // ==================== VIDEO JOURNAL ====================
-// Grace speaks her journal entries — 100% local, 100% free, 100% open-source
-// Pipeline: Journal → Claude script → Kokoro TTS (voice) → FFmpeg (portrait + audio → MP4)
+// Grace speaks her journal entries — 100% free
+// Pipeline: Journal → Claude script → Edge TTS (voice) → FFmpeg (portrait + audio → MP4)
 
-const { execFile, spawn } = require('child_process');
+const { spawn } = require('child_process');
+const { EdgeTTS } = require('@andresaya/edge-tts');
 const FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path;
 const FFPROBE_PATH = require('@ffprobe-installer/ffprobe').path;
 
@@ -620,51 +621,20 @@ async function generateVideoScript(journalContent) {
   return response.content[0].text.trim();
 }
 
-// Generate speech using Kokoro TTS in an isolated subprocess
-// (The phonemizer WASM module crashes on exit — subprocess isolates this from the server)
-function generateSpeech(text, outputPath, voice = GRACE_VOICE) {
-  return new Promise((resolve, reject) => {
-    const workerPath = path.join(__dirname, 'tts-worker.mjs');
-    const child = spawn('node', [workerPath, text, voice, outputPath], {
-      cwd: __dirname,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 120000,
-    });
-
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', d => { stdout += d; });
-    child.stderr.on('data', d => { stderr += d; });
-
-    child.on('close', (code) => {
-      // Code 137 = SIGKILL (expected — worker kills itself after write)
-      try {
-        const lines = stdout.trim().split('\n');
-        const lastLine = lines[lines.length - 1];
-        const result = JSON.parse(lastLine);
-        if (result.success) {
-          resolve(result);
-        } else {
-          reject(new Error(result.error || 'TTS generation failed'));
-        }
-      } catch (e) {
-        if (code === 137) {
-          // SIGKILL but no JSON output — check if file exists
-          if (fs.existsSync(outputPath)) {
-            resolve({ success: true, duration: 0 });
-          } else {
-            reject(new Error('TTS worker was killed before completing'));
-          }
-        } else {
-          reject(new Error(`TTS worker exited with code ${code}: ${stderr.substring(0, 200)}`));
-        }
-      }
-    });
-
-    child.on('error', (err) => {
-      reject(new Error(`Failed to start TTS worker: ${err.message}`));
-    });
+// Generate speech using Microsoft Edge TTS (free, no API key, lightweight HTTP call)
+async function generateSpeech(text, outputPath, voice = GRACE_VOICE) {
+  const tts = new EdgeTTS();
+  await tts.synthesize(text, voice, {
+    rate: '-5%',  // Slightly slower for Grace's thoughtful delivery
+    outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
   });
+  // Write audio buffer directly (toFile() auto-appends extension, so we use toBuffer)
+  const audioBuffer = tts.toBuffer();
+  await fsPromises.writeFile(outputPath, audioBuffer);
+  // Duration will be determined accurately by ffprobe in composeVideo
+  // Rough estimate for logging: 48kbps mono mp3 = 6000 bytes/second
+  const estimatedDuration = Math.round(audioBuffer.length / 6000);
+  return { success: true, duration: estimatedDuration };
 }
 
 // Compose video: Grace's portrait + audio → MP4 with gentle zoom effect
@@ -734,11 +704,11 @@ async function generateJournalVideo(journalId, customScript = null) {
   // Step 2: Create database record
   const videoId = await db.createJournalVideo(journalId, script);
   const videosDir = path.join(__dirname, 'public', 'videos');
-  const audioPath = path.join(videosDir, `${videoId}.wav`);
+  const audioPath = path.join(videosDir, `${videoId}.mp3`);
   const videoPath = path.join(videosDir, `${videoId}.mp4`);
 
   try {
-    // Step 3: Generate speech with Kokoro TTS
+    // Step 3: Generate speech with Edge TTS (free, no API key)
     console.log(`  [Video] Generating Grace's voice...`);
     await db.updateJournalVideo(videoId, { status: 'processing' });
     const ttsResult = await generateSpeech(script, audioPath);
@@ -757,7 +727,7 @@ async function generateJournalVideo(journalId, customScript = null) {
     });
     console.log(`  [Video] Complete! Saved to ${localPath} (${videoResult.duration}s)`);
 
-    // Clean up WAV file (keep only the MP4)
+    // Clean up audio file (keep only the MP4)
     try { await fsPromises.unlink(audioPath); } catch (e) {}
 
     return { videoId, script, localPath, duration: videoResult.duration };
