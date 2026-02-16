@@ -239,6 +239,9 @@ const run = async (sql, params = []) => {
 module.exports = {
   initDb,
 
+  // Raw query helper (for one-off operations like startup resets)
+  query: async (text, params) => pool.query(text, params),
+
   // Community board
   createPost: async (type, name, location, content) => {
     const id = uuid();

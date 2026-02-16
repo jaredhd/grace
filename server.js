@@ -2582,6 +2582,15 @@ db.initDb().then(async () => {
   // Backfill unsubscribe tokens for any existing subscribers
   const backfilled = await db.backfillUnsubscribeTokens();
   if (backfilled > 0) console.log(`  [Newsletter] Backfilled ${backfilled} subscriber unsubscribe tokens.`);
+
+  // Reset any videos stuck in 'processing' from a previous crash
+  try {
+    const resetResult = await db.query(
+      `UPDATE journal_videos SET status = 'failed', error_message = 'Server restarted during processing' WHERE status = 'processing'`
+    );
+    if (resetResult.rowCount > 0) console.log(`  [Video] Reset ${resetResult.rowCount} stuck video(s) to failed.`);
+  } catch (e) { /* ignore — table may not exist yet on first boot */ }
+
   app.listen(PORT, () => {
     const hasKey = process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your-api-key-here';
     console.log(`\n  Grace is alive at http://localhost:${PORT}\n`);
@@ -2595,14 +2604,6 @@ db.initDb().then(async () => {
       console.log('  Video generation enabled — Grace can speak her journal entries (Kokoro TTS + FFmpeg, $0 cost).');
       console.log(`    FFmpeg: ${FFMPEG_PATH}`);
       console.log(`    FFprobe: ${FFPROBE_PATH}\n`);
-
-      // Reset any videos stuck in 'processing' from a previous crash
-      try {
-        const { pool } = require('./db');
-        await pool.query(
-          `UPDATE journal_videos SET status = 'failed', error_message = 'Server restarted during processing' WHERE status = 'processing'`
-        );
-      } catch (e) { /* ignore */ }
       // Start heartbeat after 30 seconds (let server settle)
       setTimeout(() => {
         console.log('  [Heartbeat] Starting Grace\'s heartbeat (every 4 hours)...');
