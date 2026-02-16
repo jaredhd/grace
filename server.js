@@ -637,7 +637,7 @@ async function generateSpeech(text, outputPath, voice = GRACE_VOICE) {
   return { success: true, duration: estimatedDuration };
 }
 
-// Compose video: Grace's portrait + audio → MP4 with gentle zoom effect
+// Compose video: Grace's portrait + audio → MP4 (low memory — no zoompan)
 // Uses bundled ffmpeg/ffprobe from npm (works on Render without Docker)
 function composeVideo(audioPath, outputPath, portraitPath = GRACE_PORTRAIT) {
   return new Promise((resolve, reject) => {
@@ -657,14 +657,16 @@ function composeVideo(audioPath, outputPath, portraitPath = GRACE_PORTRAIT) {
     ffprobe.on('close', (code) => {
       const duration = parseFloat(durationStr.trim()) || 60;
 
-      // FFmpeg: portrait + audio → MP4 with slow zoom (Ken Burns effect)
+      // FFmpeg: static portrait + audio → MP4
+      // Uses 1fps + -tune stillimage for minimal memory on Render (512MB)
       const ffmpeg = spawn(FFMPEG_PATH, [
         '-y',
-        '-loop', '1', '-i', portraitPath,
+        '-loop', '1', '-framerate', '1', '-i', portraitPath,
         '-i', audioPath,
-        '-c:v', 'libx264', '-tune', 'stillimage',
+        '-c:v', 'libx264', '-tune', 'stillimage', '-preset', 'ultrafast',
         '-c:a', 'aac', '-b:a', '128k',
-        '-vf', `scale=720:720,zoompan=z='min(zoom+0.0002,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=720x720:fps=25,format=yuv420p`,
+        '-vf', 'scale=720:720,format=yuv420p',
+        '-r', '1',
         '-shortest',
         '-t', String(Math.ceil(duration + 0.5)),
         '-movflags', '+faststart',
