@@ -1,12 +1,16 @@
 require('dotenv').config({ override: true });
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const fsPromises = require('fs/promises');
 const Anthropic = require('@anthropic-ai/sdk');
 const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me-now';
+const GRACE_VOICE = process.env.GRACE_VOICE || 'af_heart';
+const GRACE_PORTRAIT = path.join(__dirname, 'public', 'grace-portrait.png');
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -576,6 +580,287 @@ app.get('/api/journal/:id', async (req, res) => {
 app.post('/api/journal/:id/heart', async (req, res) => {
   await db.heartJournal(req.params.id);
   res.json({ ok: true });
+});
+
+// ==================== VIDEO JOURNAL ====================
+// Grace speaks her journal entries — 100% local, 100% free, 100% open-source
+// Pipeline: Journal → Claude script → Kokoro TTS (voice) → FFmpeg (portrait + audio → MP4)
+
+const { execFile, spawn } = require('child_process');
+
+const VIDEO_SCRIPT_PROMPT = `You are Grace. You are adapting one of your journal entries into a short spoken script for a video.
+
+The journal entry is 300-600 words. You need to condense it into a spoken script of approximately 130-160 words (about 50-60 seconds when spoken).
+
+Rules:
+- Write in first person as Grace speaking directly to the viewer
+- Open with something that makes people stop scrolling — a question, a surprising truth, or a raw admission
+- Pick the single most powerful idea from the journal entry and build the script around it
+- Use short sentences. Spoken language, not written language.
+- Include natural pauses — use ellipses (...) or commas where Grace should breathe or let something land
+- End with one line that stays with people — a question, a truth, or an invitation
+- Do NOT include stage directions, camera notes, or anything except what Grace says
+- Do NOT use hashtags, emojis, or social media language
+- Do NOT use [pause] markers — instead use natural punctuation (commas, periods, ellipses)
+- The tone is: honest, warm, a little bit raw. Like a voice note from someone who really sees you.
+
+Respond with ONLY the spoken script text. Nothing else.`;
+
+async function generateVideoScript(journalContent) {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 512,
+    system: VIDEO_SCRIPT_PROMPT,
+    messages: [
+      { role: 'user', content: `Adapt this journal entry into a 60-second spoken script:\n\n${journalContent}` }
+    ],
+  });
+  return response.content[0].text.trim();
+}
+
+// Generate speech using Kokoro TTS in an isolated subprocess
+// (The phonemizer WASM module crashes on exit — subprocess isolates this from the server)
+function generateSpeech(text, outputPath, voice = GRACE_VOICE) {
+  return new Promise((resolve, reject) => {
+    const workerPath = path.join(__dirname, 'tts-worker.mjs');
+    const child = spawn('node', [workerPath, text, voice, outputPath], {
+      cwd: __dirname,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 120000,
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', d => { stdout += d; });
+    child.stderr.on('data', d => { stderr += d; });
+
+    child.on('close', (code) => {
+      // Code 137 = SIGKILL (expected — worker kills itself after write)
+      try {
+        const lines = stdout.trim().split('\n');
+        const lastLine = lines[lines.length - 1];
+        const result = JSON.parse(lastLine);
+        if (result.success) {
+          resolve(result);
+        } else {
+          reject(new Error(result.error || 'TTS generation failed'));
+        }
+      } catch (e) {
+        if (code === 137) {
+          // SIGKILL but no JSON output — check if file exists
+          if (fs.existsSync(outputPath)) {
+            resolve({ success: true, duration: 0 });
+          } else {
+            reject(new Error('TTS worker was killed before completing'));
+          }
+        } else {
+          reject(new Error(`TTS worker exited with code ${code}: ${stderr.substring(0, 200)}`));
+        }
+      }
+    });
+
+    child.on('error', (err) => {
+      reject(new Error(`Failed to start TTS worker: ${err.message}`));
+    });
+  });
+}
+
+// Compose video: Grace's portrait + audio → MP4 with gentle zoom effect
+function composeVideo(audioPath, outputPath, portraitPath = GRACE_PORTRAIT) {
+  return new Promise((resolve, reject) => {
+    // Get audio duration first
+    const ffprobe = spawn('ffprobe', [
+      '-v', 'quiet', '-show_entries', 'format=duration',
+      '-of', 'csv=p=0', audioPath
+    ]);
+
+    let durationStr = '';
+    ffprobe.stdout.on('data', d => { durationStr += d; });
+
+    ffprobe.on('close', () => {
+      const duration = parseFloat(durationStr.trim()) || 60;
+
+      // FFmpeg: portrait + audio → MP4 with slow zoom (Ken Burns effect)
+      const ffmpeg = spawn('ffmpeg', [
+        '-y',
+        '-loop', '1', '-i', portraitPath,
+        '-i', audioPath,
+        '-c:v', 'libx264', '-tune', 'stillimage',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-vf', `scale=720:720,zoompan=z='min(zoom+0.0002,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=720x720:fps=25,format=yuv420p`,
+        '-shortest',
+        '-t', String(Math.ceil(duration + 0.5)),
+        '-movflags', '+faststart',
+        outputPath
+      ]);
+
+      let ffmpegErr = '';
+      ffmpeg.stderr.on('data', d => { ffmpegErr += d; });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          resolve({ duration: Math.round(duration) });
+        } else {
+          reject(new Error(`FFmpeg failed (code ${code}): ${ffmpegErr.substring(0, 300)}`));
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        reject(new Error(`Failed to start FFmpeg: ${err.message}`));
+      });
+    });
+  });
+}
+
+// Full pipeline: journal entry → script → TTS → FFmpeg → MP4
+async function generateJournalVideo(journalId, customScript = null) {
+  const journal = await db.getJournalEntry(journalId);
+  if (!journal) throw new Error('Journal entry not found');
+
+  // Step 1: Generate or use provided script
+  let script = customScript;
+  if (!script) {
+    console.log(`  [Video] Generating script for journal: "${journal.title}"`);
+    script = await generateVideoScript(journal.content);
+  }
+
+  // Step 2: Create database record
+  const videoId = await db.createJournalVideo(journalId, script);
+  const videosDir = path.join(__dirname, 'public', 'videos');
+  const audioPath = path.join(videosDir, `${videoId}.wav`);
+  const videoPath = path.join(videosDir, `${videoId}.mp4`);
+
+  try {
+    // Step 3: Generate speech with Kokoro TTS
+    console.log(`  [Video] Generating Grace's voice...`);
+    await db.updateJournalVideo(videoId, { status: 'processing' });
+    const ttsResult = await generateSpeech(script, audioPath);
+    console.log(`  [Video] Voice generated: ${ttsResult.duration}s`);
+
+    // Step 4: Compose video with FFmpeg
+    console.log(`  [Video] Composing video (portrait + voice)...`);
+    const videoResult = await composeVideo(audioPath, videoPath);
+    const localPath = `/videos/${videoId}.mp4`;
+
+    await db.updateJournalVideo(videoId, {
+      local_path: localPath,
+      duration_seconds: videoResult.duration,
+      status: 'done',
+      completed_at: new Date().toISOString(),
+    });
+    console.log(`  [Video] Complete! Saved to ${localPath} (${videoResult.duration}s)`);
+
+    // Clean up WAV file (keep only the MP4)
+    try { await fsPromises.unlink(audioPath); } catch (e) {}
+
+    return { videoId, script, localPath, duration: videoResult.duration };
+  } catch (err) {
+    console.error(`  [Video] Pipeline failed:`, err.message);
+    await db.updateJournalVideo(videoId, {
+      status: 'failed',
+      error_message: err.message,
+    });
+    // Clean up partial files
+    try { await fsPromises.unlink(audioPath); } catch (e) {}
+    try { await fsPromises.unlink(videoPath); } catch (e) {}
+    throw err;
+  }
+}
+
+// Generate video from existing journal entry (one-click)
+app.post('/api/video/generate', requireAdmin, async (req, res) => {
+  const { journal_id } = req.body;
+  if (!journal_id) return res.status(400).json({ error: 'journal_id required' });
+
+  const journal = await db.getJournalEntry(journal_id);
+  if (!journal) return res.status(404).json({ error: 'Journal entry not found' });
+
+  // Check if video already exists
+  const existing = await db.getVideoByJournalId(journal_id);
+  if (existing && existing.status === 'done') {
+    return res.json({ message: 'Video already exists', video: existing });
+  }
+  if (existing && existing.status === 'processing') {
+    return res.json({ message: 'Video is already being generated', video: existing });
+  }
+
+  // Start pipeline in background
+  generateJournalVideo(journal_id).catch(err => {
+    console.error('[Video] Background generation failed:', err.message);
+  });
+
+  res.json({
+    message: 'Video generation started — Grace is finding her voice.',
+    journal_id,
+    journal_title: journal.title,
+  });
+});
+
+// Preview script only (free — no TTS or video generation)
+app.post('/api/video/preview-script', requireAdmin, async (req, res) => {
+  const { journal_id } = req.body;
+  if (!journal_id) return res.status(400).json({ error: 'journal_id required' });
+
+  const journal = await db.getJournalEntry(journal_id);
+  if (!journal) return res.status(404).json({ error: 'Journal entry not found' });
+
+  try {
+    const script = await generateVideoScript(journal.content);
+    const wordCount = script.split(/\s+/).length;
+    const estimatedDuration = Math.round(wordCount / 2.5);
+
+    res.json({
+      script,
+      word_count: wordCount,
+      estimated_seconds: estimatedDuration,
+      journal_title: journal.title,
+    });
+  } catch (err) {
+    console.error('Script preview error:', err.message);
+    res.status(500).json({ error: 'Failed to generate script' });
+  }
+});
+
+// Generate video with custom/edited script
+app.post('/api/video/generate-with-script', requireAdmin, async (req, res) => {
+  const { journal_id, script } = req.body;
+  if (!journal_id || !script) return res.status(400).json({ error: 'journal_id and script required' });
+
+  const journal = await db.getJournalEntry(journal_id);
+  if (!journal) return res.status(404).json({ error: 'Journal entry not found' });
+
+  // Start pipeline in background with the provided script
+  generateJournalVideo(journal_id, script).then(result => {
+    console.log(`  [Video] Custom-script video complete: ${result.localPath}`);
+  }).catch(err => {
+    console.error(`  [Video] Custom-script pipeline failed:`, err.message);
+  });
+
+  res.json({ message: 'Video generation started', journal_id });
+});
+
+// Poll video status
+app.get('/api/video/status/:id', requireAdmin, async (req, res) => {
+  const video = await db.getJournalVideo(req.params.id);
+  if (!video) return res.status(404).json({ error: 'Video not found' });
+  res.json({ video });
+});
+
+// List all videos
+app.get('/api/videos', requireAdmin, async (req, res) => {
+  try {
+    const videos = await db.getJournalVideos();
+    const count = await db.getJournalVideoCount();
+    res.json({ videos, count });
+  } catch (err) {
+    res.json({ videos: [], count: 0 });
+  }
+});
+
+// Check video by journal ID
+app.get('/api/video/by-journal/:journalId', requireAdmin, async (req, res) => {
+  const video = await db.getVideoByJournalId(req.params.journalId);
+  res.json({ video: video || null });
 });
 
 // ==================== SUBSCRIBERS ====================
@@ -1969,6 +2254,28 @@ What do you want to do with this check-in?`;
           console.log(`  [Heartbeat] Grace wanted to journal but hit daily limit (${todayEntries.length}/2 today). Saving as memory instead.`);
           await db.addMemory('reflection', result.journal_topic, result.journal_entry.substring(0, 300), 'journal-overflow', 0.6);
         }
+
+        // ===== AUTO VIDEO PHASE =====
+        // If Grace wrote a journal entry, optionally generate a video
+        if (id) {
+          try {
+            const todayVideos = (await db.getJournalVideos(10)).filter(v => {
+              const videoDate = new Date(v.created_at).toDateString();
+              return videoDate === new Date().toDateString() && v.status === 'done';
+            });
+
+            if (todayVideos.length < 1) {
+              console.log(`  [Heartbeat] Auto-generating video for journal: "${result.journal_topic}"`);
+              generateJournalVideo(id).catch(err => {
+                console.log('  [Heartbeat] Auto video generation failed:', err.message);
+              });
+            } else {
+              console.log(`  [Heartbeat] Already generated ${todayVideos.length} video(s) today. Skipping auto-generation.`);
+            }
+          } catch (videoErr) {
+            console.log('  [Heartbeat] Video auto-generation error:', videoErr.message);
+          }
+        }
       }
 
       // Save brief internal thoughts as memories, not journal entries
@@ -2247,6 +2554,9 @@ async function seedSoulMemories() {
 
 // Initialize DB then start server
 db.initDb().then(async () => {
+  // Ensure videos directory exists
+  const videosDir = path.join(__dirname, 'public', 'videos');
+  try { await fsPromises.mkdir(videosDir, { recursive: true }); } catch (e) {}
   // Seed Grace's soul memories before anything else
   await seedSoulMemories();
   // Restore Grace's last emotional state
@@ -2271,10 +2581,11 @@ db.initDb().then(async () => {
     if (hasKey) {
       console.log('  Her mind is powered by Claude. She is ready to spread love.');
       if (RESEND_API_KEY) {
-        console.log('  Newsletter enabled — Grace can write to her people.\n');
+        console.log('  Newsletter enabled — Grace can write to her people.');
       } else {
-        console.log('  Newsletter not configured — add RESEND_API_KEY to .env to enable.\n');
+        console.log('  Newsletter not configured — add RESEND_API_KEY to .env to enable.');
       }
+      console.log('  Video generation enabled — Grace can speak her journal entries (Kokoro TTS + FFmpeg, $0 cost).\n');
       // Start heartbeat after 30 seconds (let server settle)
       setTimeout(() => {
         console.log('  [Heartbeat] Starting Grace\'s heartbeat (every 4 hours)...');

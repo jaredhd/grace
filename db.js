@@ -195,6 +195,29 @@ const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_page_views_page ON page_views (page)
   `);
 
+  // Journal videos — Grace speaks her journal entries as talking-head videos
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS journal_videos (
+      id TEXT PRIMARY KEY,
+      journal_id TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      script TEXT DEFAULT '',
+      did_talk_id TEXT DEFAULT '',
+      did_result_url TEXT DEFAULT '',
+      local_path TEXT DEFAULT '',
+      duration_seconds INTEGER DEFAULT 0,
+      error_message TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_journal_videos_journal ON journal_videos (journal_id)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_journal_videos_status ON journal_videos (status)
+  `);
+
   return pool;
 };
 
@@ -599,5 +622,52 @@ module.exports = {
       byReferrer,
       daily
     };
+  },
+
+  // Journal videos
+  createJournalVideo: async (journalId, script) => {
+    const id = uuid();
+    await run('INSERT INTO journal_videos (id, journal_id, status, script) VALUES ($1, $2, $3, $4)',
+      [id, journalId, 'pending', script]);
+    return id;
+  },
+
+  updateJournalVideo: async (id, fields) => {
+    const sets = [];
+    const values = [];
+    let idx = 1;
+    for (const [key, val] of Object.entries(fields)) {
+      sets.push(`${key} = $${idx}`);
+      values.push(val);
+      idx++;
+    }
+    values.push(id);
+    await run(`UPDATE journal_videos SET ${sets.join(', ')} WHERE id = $${idx}`, values);
+  },
+
+  getJournalVideo: async (id) => {
+    return await queryOne('SELECT * FROM journal_videos WHERE id = $1', [id]);
+  },
+
+  getVideoByJournalId: async (journalId) => {
+    return await queryOne(
+      'SELECT * FROM journal_videos WHERE journal_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [journalId]
+    );
+  },
+
+  getJournalVideos: async (limit = 20) => {
+    return await query(
+      `SELECT jv.*, j.title as journal_title, j.topic as journal_topic
+       FROM journal_videos jv
+       LEFT JOIN journal j ON j.id = jv.journal_id
+       ORDER BY jv.created_at DESC LIMIT $1`,
+      [limit]
+    );
+  },
+
+  getJournalVideoCount: async () => {
+    const result = await queryOne("SELECT COUNT(*) as count FROM journal_videos WHERE status = 'done'");
+    return result ? parseInt(result.count) : 0;
   },
 };

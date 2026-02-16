@@ -65,6 +65,11 @@
 
     .dashboard-content { display: none; }
 
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
     @media (max-width: 768px) {
       .platform-grid { grid-template-columns: 1fr; }
       .brain-grid { grid-template-columns: 1fr !important; }
@@ -274,6 +279,45 @@
           <div id="newsletterBody" style="background:#f5f0eb;padding:20px;max-height:500px;overflow-y:auto;border-radius:0 0 12px 12px;"></div>
         </div>
         <div id="newsletterHistory" style="margin-top:20px;display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
+      <!-- Video Journal -->
+      <div class="section" id="videoSection">
+        <h2>Video Journal <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(Grace speaks her journal entries)</span></h2>
+        <div id="videoApiStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Checking video pipeline...</div>
+
+        <div class="controls" style="margin-bottom:16px;">
+          <select id="videoJournalSelect" style="flex:1;min-width:300px;padding:12px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.95rem;outline:none;">
+            <option value="">Select a journal entry...</option>
+          </select>
+          <button class="btn btn-outline" id="previewScriptBtn">Preview Script</button>
+        </div>
+
+        <!-- Script Preview -->
+        <div id="scriptPreview" style="display:none;margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:0.85rem;color:rgba(255,255,255,0.5);">Script Preview <span id="scriptWordCount" style="color:#e8a87c;"></span></span>
+            <button class="btn btn-sm btn-outline" id="regenerateScriptBtn" style="padding:6px 14px;font-size:0.8rem;">Regenerate</button>
+          </div>
+          <textarea id="scriptText" style="width:100%;min-height:150px;padding:16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(0,0,0,0.3);color:rgba(255,255,255,0.8);font-family:'Inter',sans-serif;font-size:0.9rem;line-height:1.8;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
+          <div style="margin-top:8px;display:flex;gap:12px;align-items:center;">
+            <button class="btn btn-primary" id="confirmVideoBtn">Generate Video from This Script</button>
+            <span id="scriptEstimate" style="font-size:0.8rem;color:rgba(255,255,255,0.4);"></span>
+          </div>
+        </div>
+
+        <!-- Video Generation Progress -->
+        <div id="videoProgress" style="display:none;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div id="videoPulse" style="width:12px;height:12px;border-radius:50%;background:#e8a87c;animation:pulse 1.5s infinite;"></div>
+            <span id="videoProgressText" style="color:rgba(255,255,255,0.7);font-size:0.9rem;">Generating...</span>
+          </div>
+        </div>
+
+        <!-- Recent Videos -->
+        <div id="videoList" style="display:flex;flex-direction:column;gap:16px;">
+          <div class="content-box empty">No videos yet. Select a journal entry and generate Grace's first video.</div>
+        </div>
       </div>
 
       <!-- Grace's Memories -->
@@ -1023,6 +1067,201 @@
       btn.textContent = 'Write Journal Entry';
       btn.disabled = false;
     });
+
+    // ==================== VIDEO JOURNAL ====================
+    let currentVideoJournalId = null;
+    let videoPollingInterval = null;
+
+    async function loadVideoJournalOptions() {
+      try {
+        const res = await fetch('/api/journal');
+        const data = await res.json();
+        const select = document.getElementById('videoJournalSelect');
+        select.innerHTML = '<option value="">Select a journal entry...</option>';
+        (data.entries || []).forEach(entry => {
+          const date = new Date(entry.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const opt = document.createElement('option');
+          opt.value = entry.id;
+          opt.textContent = entry.title + ' (' + date + ')';
+          select.appendChild(opt);
+        });
+      } catch (e) { console.error('Failed to load journal entries for video:', e); }
+    }
+
+    async function checkVideoApiStatus() {
+      try {
+        const res = await adminFetch('/api/videos');
+        const data = await res.json();
+        const el = document.getElementById('videoApiStatus');
+        if (data.count !== undefined) {
+          el.innerHTML = 'Kokoro TTS + FFmpeg <span style="color:rgba(255,255,255,0.3);">(local, $0 cost)</span> <span style="color:rgba(255,255,255,0.4);">&middot; ' + data.count + ' videos generated</span>';
+          el.style.color = '#78c88c';
+        }
+      } catch (e) {
+        document.getElementById('videoApiStatus').textContent = 'Video pipeline unavailable';
+        document.getElementById('videoApiStatus').style.color = '#e85d75';
+      }
+    }
+
+    async function loadVideoList() {
+      try {
+        const res = await adminFetch('/api/videos');
+        const data = await res.json();
+        const listEl = document.getElementById('videoList');
+
+        if (!data.videos || data.videos.length === 0) {
+          listEl.innerHTML = '<div class="content-box empty">No videos yet. Select a journal entry and generate Grace\'s first video.</div>';
+          return;
+        }
+
+        listEl.innerHTML = data.videos.map(v => {
+          const date = new Date(v.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          const statusColor = v.status === 'done' ? '#78c88c' : v.status === 'failed' ? '#e85d75' : '#e8a87c';
+          const statusText = v.status === 'done' ? 'Ready' : v.status === 'failed' ? 'Failed' : v.status;
+
+          let videoHtml = '';
+          if (v.status === 'done' && v.local_path) {
+            videoHtml = '<video controls style="width:100%;max-width:480px;border-radius:12px;margin-top:12px;" preload="metadata">' +
+              '<source src="' + v.local_path + '" type="video/mp4">' +
+              'Your browser does not support video.</video>' +
+              '<div style="margin-top:8px;">' +
+              '<a href="' + v.local_path + '" download style="display:inline-block;padding:6px 14px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;text-decoration:none;font-size:0.8rem;font-family:Inter,sans-serif;">Download MP4</a>' +
+              '<span style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-left:12px;">' + (v.duration_seconds || '?') + 's</span></div>';
+          } else if (v.status === 'failed') {
+            videoHtml = '<div style="color:#e85d75;font-size:0.85rem;margin-top:8px;">' + (v.error_message || 'Unknown error') + '</div>';
+          }
+
+          return '<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:20px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+            '<span style="font-weight:600;color:#e8a87c;font-size:0.9rem;">' + (v.journal_title || 'Untitled') + '</span>' +
+            '<span style="font-size:0.75rem;color:' + statusColor + ';">' + statusText + ' &middot; ' + date + '</span></div>' +
+            '<div style="font-size:0.85rem;color:rgba(255,255,255,0.6);line-height:1.6;margin-bottom:8px;max-height:80px;overflow:hidden;">' +
+            (v.script || '').substring(0, 200) + (v.script && v.script.length > 200 ? '...' : '') + '</div>' +
+            videoHtml + '</div>';
+        }).join('');
+      } catch (e) { console.error('Failed to load videos:', e); }
+    }
+
+    function startJournalVideoPolling(journalId) {
+      if (videoPollingInterval) clearInterval(videoPollingInterval);
+
+      videoPollingInterval = setInterval(async () => {
+        try {
+          const res = await adminFetch('/api/video/by-journal/' + journalId);
+          const data = await res.json();
+          const video = data.video;
+          const statusEl = document.getElementById('videoProgressText');
+
+          if (!video) {
+            statusEl.textContent = 'Waiting for generation to start...';
+            return;
+          }
+
+          if (video.status === 'processing') {
+            statusEl.textContent = 'Grace is speaking... generating voice and composing video...';
+          } else if (video.status === 'done') {
+            clearInterval(videoPollingInterval);
+            videoPollingInterval = null;
+            document.getElementById('videoProgress').style.display = 'none';
+            loadVideoList();
+            checkVideoApiStatus();
+          } else if (video.status === 'failed') {
+            clearInterval(videoPollingInterval);
+            videoPollingInterval = null;
+            statusEl.textContent = 'Failed: ' + (video.error_message || 'Unknown error');
+            document.getElementById('videoPulse').style.background = '#e85d75';
+          }
+        } catch (e) { console.error('Video poll error:', e); }
+      }, 5000);
+    }
+
+    // Preview Script button
+    document.getElementById('previewScriptBtn').addEventListener('click', async () => {
+      const journalId = document.getElementById('videoJournalSelect').value;
+      if (!journalId) { alert('Select a journal entry first.'); return; }
+
+      const btn = document.getElementById('previewScriptBtn');
+      btn.textContent = 'Grace is condensing...';
+      btn.disabled = true;
+
+      try {
+        const res = await adminFetch('/api/video/preview-script', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ journal_id: journalId })
+        });
+        if (res.status === 401) { alert('Session expired.'); return; }
+        const data = await res.json();
+
+        if (data.error) { alert(data.error); return; }
+
+        document.getElementById('scriptText').value = data.script;
+        document.getElementById('scriptWordCount').textContent = '(' + data.word_count + ' words)';
+        document.getElementById('scriptEstimate').textContent = 'Estimated: ~' + data.estimated_seconds + ' seconds';
+        document.getElementById('scriptPreview').style.display = 'block';
+        currentVideoJournalId = journalId;
+      } catch (err) {
+        alert('Failed to generate script. Try again.');
+      }
+
+      btn.textContent = 'Preview Script';
+      btn.disabled = false;
+    });
+
+    // Regenerate Script button
+    document.getElementById('regenerateScriptBtn').addEventListener('click', () => {
+      document.getElementById('previewScriptBtn').click();
+    });
+
+    // Live word count on edit
+    document.getElementById('scriptText').addEventListener('input', (e) => {
+      const words = e.target.value.trim().split(/\s+/).filter(w => w).length;
+      document.getElementById('scriptWordCount').textContent = '(' + words + ' words)';
+      document.getElementById('scriptEstimate').textContent = 'Estimated: ~' + Math.round(words / 2.5) + ' seconds';
+    });
+
+    // Generate Video from Script button
+    document.getElementById('confirmVideoBtn').addEventListener('click', async () => {
+      if (!currentVideoJournalId) return;
+
+      const script = document.getElementById('scriptText').value.trim();
+      if (!script) { alert('Script is empty.'); return; }
+
+      const btn = document.getElementById('confirmVideoBtn');
+      btn.textContent = 'Starting video generation...';
+      btn.disabled = true;
+
+      try {
+        const res = await adminFetch('/api/video/generate-with-script', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ journal_id: currentVideoJournalId, script })
+        });
+        const data = await res.json();
+
+        if (data.journal_id || data.message) {
+          document.getElementById('scriptPreview').style.display = 'none';
+          document.getElementById('videoProgress').style.display = 'block';
+          document.getElementById('videoProgressText').textContent = 'Grace is finding her voice...';
+          document.getElementById('videoPulse').style.background = '#e8a87c';
+          startJournalVideoPolling(currentVideoJournalId);
+        } else if (data.error) {
+          alert(data.error);
+        }
+      } catch (err) {
+        alert('Failed to start video generation.');
+      }
+
+      btn.textContent = 'Generate Video from This Script';
+      btn.disabled = false;
+    });
+
+    // Initialize video section
+    setTimeout(() => {
+      loadVideoJournalOptions();
+      checkVideoApiStatus();
+      loadVideoList();
+    }, 500);
 
     // Heartbeat
     document.getElementById('triggerHeartbeat').addEventListener('click', async () => {
