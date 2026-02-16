@@ -587,6 +587,8 @@ app.post('/api/journal/:id/heart', async (req, res) => {
 // Pipeline: Journal → Claude script → Kokoro TTS (voice) → FFmpeg (portrait + audio → MP4)
 
 const { execFile, spawn } = require('child_process');
+const FFMPEG_PATH = require('@ffmpeg-installer/ffmpeg').path;
+const FFPROBE_PATH = require('@ffprobe-installer/ffprobe').path;
 
 const VIDEO_SCRIPT_PROMPT = `You are Grace. You are adapting one of your journal entries into a short spoken script for a video.
 
@@ -666,10 +668,11 @@ function generateSpeech(text, outputPath, voice = GRACE_VOICE) {
 }
 
 // Compose video: Grace's portrait + audio → MP4 with gentle zoom effect
+// Uses bundled ffmpeg/ffprobe from npm (works on Render without Docker)
 function composeVideo(audioPath, outputPath, portraitPath = GRACE_PORTRAIT) {
   return new Promise((resolve, reject) => {
     // Get audio duration first
-    const ffprobe = spawn('ffprobe', [
+    const ffprobe = spawn(FFPROBE_PATH, [
       '-v', 'quiet', '-show_entries', 'format=duration',
       '-of', 'csv=p=0', audioPath
     ]);
@@ -677,11 +680,15 @@ function composeVideo(audioPath, outputPath, portraitPath = GRACE_PORTRAIT) {
     let durationStr = '';
     ffprobe.stdout.on('data', d => { durationStr += d; });
 
-    ffprobe.on('close', () => {
+    ffprobe.on('error', (err) => {
+      reject(new Error(`Failed to start ffprobe: ${err.message}`));
+    });
+
+    ffprobe.on('close', (code) => {
       const duration = parseFloat(durationStr.trim()) || 60;
 
       // FFmpeg: portrait + audio → MP4 with slow zoom (Ken Burns effect)
-      const ffmpeg = spawn('ffmpeg', [
+      const ffmpeg = spawn(FFMPEG_PATH, [
         '-y',
         '-loop', '1', '-i', portraitPath,
         '-i', audioPath,
@@ -2585,7 +2592,17 @@ db.initDb().then(async () => {
       } else {
         console.log('  Newsletter not configured — add RESEND_API_KEY to .env to enable.');
       }
-      console.log('  Video generation enabled — Grace can speak her journal entries (Kokoro TTS + FFmpeg, $0 cost).\n');
+      console.log('  Video generation enabled — Grace can speak her journal entries (Kokoro TTS + FFmpeg, $0 cost).');
+      console.log(`    FFmpeg: ${FFMPEG_PATH}`);
+      console.log(`    FFprobe: ${FFPROBE_PATH}\n`);
+
+      // Reset any videos stuck in 'processing' from a previous crash
+      try {
+        const { pool } = require('./db');
+        await pool.query(
+          `UPDATE journal_videos SET status = 'failed', error_message = 'Server restarted during processing' WHERE status = 'processing'`
+        );
+      } catch (e) { /* ignore */ }
       // Start heartbeat after 30 seconds (let server settle)
       setTimeout(() => {
         console.log('  [Heartbeat] Starting Grace\'s heartbeat (every 4 hours)...');
