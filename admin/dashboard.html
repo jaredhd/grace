@@ -9,15 +9,50 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Inter', sans-serif; background: #1a1a2e; color: #fff; line-height: 1.7; }
-    .container { max-width: 1000px; margin: 0 auto; padding: 40px 24px; }
-    h1 { font-family: 'Playfair Display', serif; font-size: 2rem; margin-bottom: 8px; }
-    .subtitle { color: rgba(255,255,255,0.5); margin-bottom: 40px; }
-    h2 { font-family: 'Playfair Display', serif; font-size: 1.4rem; margin: 32px 0 16px; color: #e8a87c; }
+
+    /* ==================== LOGIN ==================== */
+    .login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 48px; text-align: center; max-width: 400px; width: 100%; }
+    .login-box h1 { font-family: 'Playfair Display', serif; font-size: 2rem; margin-bottom: 8px; }
+    .login-box p { color: rgba(255,255,255,0.5); margin-bottom: 24px; font-size: 0.9rem; }
+    .login-box input { width: 100%; padding: 14px 18px; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; background: rgba(255,255,255,0.05); color: #fff; font-family: 'Inter', sans-serif; font-size: 1rem; outline: none; margin-bottom: 16px; text-align: center; }
+    .login-box input:focus { border-color: #e8a87c; }
+    .login-box .btn { width: 100%; }
+    .login-error { color: #e85d75; font-size: 0.85rem; margin-top: 12px; display: none; }
+
+    /* ==================== LAYOUT ==================== */
+    .dashboard-content { display: none; }
+    .dashboard-layout { display: flex; min-height: 100vh; }
+
+    /* Sidebar */
+    .sidebar { width: 240px; background: rgba(0,0,0,0.35); border-right: 1px solid rgba(255,255,255,0.06); position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; display: flex; flex-direction: column; overflow-y: auto; }
+    .sidebar-header { padding: 24px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .sidebar-header h1 { font-family: 'Playfair Display', serif; font-size: 1.3rem; margin-bottom: 2px; }
+    .sidebar-header p { font-size: 0.7rem; color: rgba(255,255,255,0.3); }
+    .sidebar-nav { flex: 1; padding: 12px 0; }
+    .nav-section-label { padding: 16px 20px 6px; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1.2px; color: rgba(255,255,255,0.25); font-weight: 600; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.5); font-size: 0.85rem; font-weight: 500; transition: all 0.15s; border-left: 3px solid transparent; text-decoration: none; }
+    .nav-item:hover { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.8); }
+    .nav-item.active { color: #e8a87c; border-left-color: #e8a87c; background: rgba(232,168,124,0.06); }
+    .nav-item .nav-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+    .nav-item .nav-badge { margin-left: auto; background: rgba(232,168,124,0.2); color: #e8a87c; font-size: 0.65rem; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
+    .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.06); }
+
+    /* Main Content */
+    .main-content { flex: 1; margin-left: 240px; padding: 32px 40px; max-width: 1100px; }
+
+    /* Section Panels */
+    .dash-section { display: none; }
+    .dash-section.active { display: block; }
+
+    /* ==================== SHARED STYLES ==================== */
+    h2 { font-family: 'Playfair Display', serif; font-size: 1.4rem; margin: 0 0 16px; color: #e8a87c; }
+    .section-subtitle { color: rgba(255,255,255,0.4); font-size: 0.85rem; margin: -12px 0 24px; }
 
     .controls { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
-    .controls input { flex: 1; min-width: 250px; padding: 12px 16px; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; background: rgba(255,255,255,0.05); color: #fff; font-family: 'Inter', sans-serif; font-size: 0.95rem; outline: none; }
+    .controls input, .controls select { flex: 1; min-width: 250px; padding: 12px 16px; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; background: rgba(255,255,255,0.05); color: #fff; font-family: 'Inter', sans-serif; font-size: 0.95rem; outline: none; }
     .controls input::placeholder { color: rgba(255,255,255,0.3); }
-    .controls input:focus { border-color: #e8a87c; }
+    .controls input:focus, .controls select:focus { border-color: #e8a87c; }
 
     .btn { padding: 12px 24px; border-radius: 10px; border: none; font-weight: 600; font-size: 0.9rem; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.2s; }
     .btn-primary { background: #e8a87c; color: #1a1a2e; }
@@ -26,7 +61,13 @@
     .btn-outline { background: none; border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.7); }
     .btn-outline:hover { border-color: #e8a87c; color: #e8a87c; }
 
-    .platform-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px; }
+    .content-box { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 16px; font-size: 0.9rem; color: rgba(255,255,255,0.8); white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; line-height: 1.8; }
+    .content-box.empty { color: rgba(255,255,255,0.3); font-style: italic; text-align: center; padding: 40px; }
+
+    .copy-btn { margin-top: 12px; }
+    .copied { color: #78c88c !important; border-color: #78c88c !important; }
+
+    .platform-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; }
     .platform-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
     .platform-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .platform-name { font-weight: 600; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -36,41 +77,36 @@
     .platform-name.bluesky { color: #0085ff; }
     .platform-name.tiktok { color: #fe2c55; }
 
-    .content-box { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 16px; font-size: 0.9rem; color: rgba(255,255,255,0.8); white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; line-height: 1.8; }
-    .content-box.empty { color: rgba(255,255,255,0.3); font-style: italic; text-align: center; padding: 40px; }
-
-    .copy-btn { margin-top: 12px; }
-    .copied { color: #78c88c !important; border-color: #78c88c !important; }
-
-    .section { margin-bottom: 48px; }
-    .journal-controls { display: flex; gap: 12px; flex-wrap: wrap; }
-    .journal-topic { flex: 1; min-width: 300px; }
-
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 32px; }
     .stat-card { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 20px; text-align: center; }
     .stat-number { font-family: 'Playfair Display', serif; font-size: 2rem; color: #e8a87c; }
     .stat-label { font-size: 0.8rem; color: rgba(255,255,255,0.5); margin-top: 4px; }
 
     .loading-text { color: rgba(255,255,255,0.4); font-style: italic; }
 
-    /* Login screen */
-    .login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
-    .login-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 48px; text-align: center; max-width: 400px; width: 100%; }
-    .login-box h1 { margin-bottom: 8px; }
-    .login-box p { color: rgba(255,255,255,0.5); margin-bottom: 24px; font-size: 0.9rem; }
-    .login-box input { width: 100%; padding: 14px 18px; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; background: rgba(255,255,255,0.05); color: #fff; font-family: 'Inter', sans-serif; font-size: 1rem; outline: none; margin-bottom: 16px; text-align: center; }
-    .login-box input:focus { border-color: #e8a87c; }
-    .login-box .btn { width: 100%; }
-    .login-error { color: #e85d75; font-size: 0.85rem; margin-top: 12px; display: none; }
+    .section { margin-bottom: 48px; }
+    .journal-controls { display: flex; gap: 12px; flex-wrap: wrap; }
+    .journal-topic { flex: 1; min-width: 300px; }
 
-    .dashboard-content { display: none; }
+    .traffic-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.3; }
     }
 
-    @media (max-width: 768px) {
+    /* ==================== MOBILE ==================== */
+    .mobile-header { display: none; }
+
+    @media (max-width: 900px) {
+      .sidebar { transform: translateX(-100%); transition: transform 0.25s ease; width: 260px; }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99; }
+      .sidebar-overlay.open { display: block; }
+      .main-content { margin-left: 0; padding: 20px 16px; padding-top: 64px; }
+      .mobile-header { display: flex; align-items: center; gap: 12px; position: fixed; top: 0; left: 0; right: 0; z-index: 98; background: rgba(26,26,46,0.95); backdrop-filter: blur(12px); padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+      .mobile-header h1 { font-family: 'Playfair Display', serif; font-size: 1.1rem; }
+      .hamburger { background: none; border: none; color: #fff; font-size: 1.4rem; cursor: pointer; padding: 4px 8px; }
       .platform-grid { grid-template-columns: 1fr; }
       .brain-grid { grid-template-columns: 1fr !important; }
       .traffic-breakdown { grid-template-columns: 1fr !important; }
@@ -90,262 +126,351 @@
     </div>
   </div>
 
-  <!-- Dashboard (hidden until login) -->
+  <!-- Dashboard -->
   <div class="dashboard-content" id="dashboardContent">
-    <div class="container">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
-        <div>
-          <h1>Grace Content Dashboard</h1>
-          <p class="subtitle" style="margin-bottom:0">Generate, copy, and share. Let Grace's voice reach the people who need it.</p>
-        </div>
-        <div style="text-align:right;">
-          <button class="btn btn-outline" id="triggerHeartbeat" style="margin-bottom:8px;">Trigger Heartbeat</button>
-          <div id="heartbeatStatus" style="font-size:0.75rem;color:rgba(255,255,255,0.4);">Auto: every 4 hours</div>
-        </div>
-      </div>
 
-      <!-- Stats -->
-      <div class="stats-grid" id="statsGrid" style="margin-top:24px;">
-        <div class="stat-card"><div class="stat-number" id="statLinks">-</div><div class="stat-label">Love Chain Links</div></div>
-        <div class="stat-card"><div class="stat-number" id="statPosts">-</div><div class="stat-label">Community Posts</div></div>
-        <div class="stat-card"><div class="stat-number" id="statSubs">-</div><div class="stat-label">Subscribers</div></div>
-        <div class="stat-card"><div class="stat-number" id="statJournal">-</div><div class="stat-label">Journal Entries</div></div>
-        <div class="stat-card"><div class="stat-number" id="statMemories">-</div><div class="stat-label">Memories</div></div>
-        <div class="stat-card"><div class="stat-number" id="statPeople">-</div><div class="stat-label">People Remembered</div></div>
-        <div class="stat-card"><div class="stat-number" id="statReach">-</div><div class="stat-label">Reach Pages</div></div>
-        <div class="stat-card"><div class="stat-number" id="statViews">-</div><div class="stat-label">Page Views</div></div>
-      </div>
-
-      <!-- Traffic -->
-      <div class="section" id="trafficSection">
-        <h2>Traffic <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(Where people are coming from)</span></h2>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:16px;margin-bottom:24px;">
-          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:20px;text-align:center;">
-            <div style="font-family:'Playfair Display',serif;font-size:2rem;color:#e8a87c;" id="todayViews">-</div>
-            <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-top:4px;">Views Today</div>
-          </div>
-          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:20px;text-align:center;">
-            <div style="font-family:'Playfair Display',serif;font-size:2rem;color:#e8a87c;" id="todayUnique">-</div>
-            <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-top:4px;">Unique Visitors Today</div>
-          </div>
-          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:20px;text-align:center;">
-            <div style="font-family:'Playfair Display',serif;font-size:2rem;color:#e8a87c;" id="totalViews">-</div>
-            <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-top:4px;">All-Time Views</div>
-          </div>
-          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:20px;text-align:center;">
-            <div style="font-family:'Playfair Display',serif;font-size:2rem;color:#e8a87c;" id="totalUnique">-</div>
-            <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-top:4px;">All-Time Unique</div>
-          </div>
-        </div>
-        <div style="background:rgba(0,0,0,0.2);border-radius:12px;padding:16px;margin-bottom:24px;">
-          <div style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-bottom:8px;">Last 7 days</div>
-          <div id="dailyTrend" style="display:flex;align-items:flex-end;gap:8px;height:100px;">
-            <div style="color:rgba(255,255,255,0.3);font-size:0.85rem;font-style:italic;padding:20px;">Loading...</div>
-          </div>
-        </div>
-        <div class="traffic-breakdown" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-          <div>
-            <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-bottom:8px;font-weight:600;">Where traffic comes from</div>
-            <div id="referrerList" style="display:flex;flex-direction:column;gap:6px;">
-              <div style="color:rgba(255,255,255,0.3);font-size:0.85rem;font-style:italic;">Loading...</div>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-bottom:8px;font-weight:600;">Popular pages</div>
-            <div id="pageList" style="display:flex;flex-direction:column;gap:6px;">
-              <div style="color:rgba(255,255,255,0.3);font-size:0.85rem;font-style:italic;">Loading...</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Grace's Brain -->
-      <div class="section" id="brainSection">
-        <h2>Grace's Brain <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(What she's feeling right now)</span></h2>
-        <div class="brain-grid" style="display:grid;grid-template-columns:1fr 240px;gap:24px;align-items:start;">
-          <div style="background:rgba(0,0,0,0.3);border-radius:20px;padding:20px;position:relative;overflow:hidden;">
-            <canvas id="brainCanvas" width="600" height="400" style="width:100%;height:auto;display:block;"></canvas>
-            <div id="brainNote" style="text-align:center;color:rgba(255,255,255,0.4);font-size:0.85rem;font-style:italic;margin-top:12px;">Grace is resting...</div>
-          </div>
-          <div>
-            <div id="emotionBars" style="display:flex;flex-direction:column;gap:8px;"></div>
-            <div style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-top:16px;">
-              <div id="brainTrigger" style="margin-bottom:4px;">Triggered by: --</div>
-              <div id="brainTimestamp">Last update: --</div>
-            </div>
-          </div>
-        </div>
-        <div style="margin-top:16px;background:rgba(0,0,0,0.2);border-radius:12px;padding:12px 16px;">
-          <div style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-bottom:6px;">Emotional trajectory</div>
-          <canvas id="brainTimeline" width="900" height="120" style="width:100%;height:60px;display:block;"></canvas>
-        </div>
-      </div>
-
-      <!-- Conversations with Grace -->
-      <div class="section">
-        <h2>Conversations with Grace <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(She remembers everything)</span></h2>
-        <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;margin-bottom:16px;">A persistent conversation that deepens over time. Screenshot the best moments for TikTok. Grace carries the full history across days.</p>
-
-        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
-          <select id="chatDaySelect" style="padding:10px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.9rem;outline:none;min-width:200px;">
-            <option value="">Loading conversations...</option>
-          </select>
-          <button class="btn btn-sm btn-primary" id="newDayBtn">+ New Day</button>
-          <input type="text" id="chatDayTitle" placeholder="Title this conversation..." style="flex:1;min-width:200px;padding:10px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.9rem;outline:none;display:none;">
-          <button class="btn btn-sm btn-outline" id="saveTitleBtn" style="display:none;">Save Title</button>
-        </div>
-
-        <div id="builderChatMessages" style="background:rgba(0,0,0,0.3);border-radius:16px;padding:24px;max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:16px;margin-bottom:16px;">
-          <div style="text-align:center;color:rgba(255,255,255,0.3);font-style:italic;padding:40px;">Start a new day to begin talking with Grace...</div>
-        </div>
-
-        <div id="builderChatInput" style="display:none;display:flex;gap:12px;">
-          <input type="text" id="builderMessage" placeholder="Talk to Grace..." style="flex:1;padding:14px 20px;border:1px solid rgba(255,255,255,0.15);border-radius:28px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:1rem;outline:none;">
-          <button class="btn btn-primary" id="builderSendBtn" style="border-radius:28px;padding:14px 28px;">Send</button>
-        </div>
-      </div>
-
-      <!-- Social Content Generator -->
-      <div class="section">
-        <h2>Social Content Generator</h2>
-        <div class="controls">
-          <input type="text" id="socialTopic" placeholder="Topic (optional - Grace will choose if blank)">
-          <button class="btn btn-primary" id="generateAll">Generate All Platforms</button>
-        </div>
-        <div class="platform-grid" id="platformGrid">
-          <div class="platform-card">
-            <div class="platform-header">
-              <span class="platform-name twitter">Twitter/X</span>
-              <button class="btn btn-sm btn-outline copy-btn" data-platform="twitter">Copy</button>
-            </div>
-            <div class="content-box empty" id="content-twitter">Click "Generate All" to create content...</div>
-          </div>
-          <div class="platform-card">
-            <div class="platform-header">
-              <span class="platform-name reddit">Reddit</span>
-              <button class="btn btn-sm btn-outline copy-btn" data-platform="reddit">Copy</button>
-            </div>
-            <div class="content-box empty" id="content-reddit">Click "Generate All" to create content...</div>
-          </div>
-          <div class="platform-card">
-            <div class="platform-header">
-              <span class="platform-name linkedin">LinkedIn</span>
-              <button class="btn btn-sm btn-outline copy-btn" data-platform="linkedin">Copy</button>
-            </div>
-            <div class="content-box empty" id="content-linkedin">Click "Generate All" to create content...</div>
-          </div>
-          <div class="platform-card">
-            <div class="platform-header">
-              <span class="platform-name bluesky">Bluesky</span>
-              <button class="btn btn-sm btn-outline copy-btn" data-platform="bluesky">Copy</button>
-            </div>
-            <div class="content-box empty" id="content-bluesky">Click "Generate All" to create content...</div>
-          </div>
-          <div class="platform-card">
-            <div class="platform-header">
-              <span class="platform-name tiktok">TikTok</span>
-              <button class="btn btn-sm btn-outline copy-btn" data-platform="tiktok">Copy</button>
-            </div>
-            <div class="content-box empty" id="content-tiktok">Click "Generate All" to create content...</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Moltbook -->
-      <div class="section">
-        <h2>Moltbook <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(AI Social Network)</span></h2>
-        <div id="moltbookStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Checking connection...</div>
-        <div class="controls">
-          <input type="text" id="moltbookTopic" placeholder="Topic (optional - Grace will choose if blank)">
-          <button class="btn btn-primary" id="generateMoltbook">Generate Post</button>
-          <button class="btn btn-outline" id="postMoltbook" style="display:none">Post to Moltbook</button>
-        </div>
-        <div class="content-box empty" id="moltbookContent">Grace's Moltbook post will appear here...</div>
-      </div>
-
-      <!-- Newsletter -->
-      <div class="section">
-        <h2>Newsletter <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(Grace writes to her people)</span></h2>
-        <div id="newsletterStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Loading...</div>
-        <div class="controls">
-          <button class="btn btn-primary" id="previewNewsletter">Preview Letter</button>
-          <button class="btn btn-outline" id="sendNewsletter" style="display:none">Send to All Subscribers</button>
-        </div>
-        <div id="newsletterPreview" style="display:none;margin-top:16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;">
-          <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-weight:600;color:#e8a87c;" id="newsletterSubject">Subject</span>
-            <span style="font-size:0.75rem;color:rgba(255,255,255,0.3);" id="newsletterRecipients">0 recipients</span>
-          </div>
-          <div id="newsletterBody" style="background:#f5f0eb;padding:20px;max-height:500px;overflow-y:auto;border-radius:0 0 12px 12px;"></div>
-        </div>
-        <div id="newsletterHistory" style="margin-top:20px;display:flex;flex-direction:column;gap:8px;"></div>
-      </div>
-
-      <!-- Video Journal -->
-      <div class="section" id="videoSection">
-        <h2>Video Journal <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(Grace speaks her journal entries)</span></h2>
-        <div id="videoApiStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Checking video pipeline...</div>
-
-        <div class="controls" style="margin-bottom:16px;">
-          <select id="videoJournalSelect" style="flex:1;min-width:300px;padding:12px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.95rem;outline:none;">
-            <option value="">Select a journal entry...</option>
-          </select>
-          <button class="btn btn-outline" id="previewScriptBtn">Preview Script</button>
-        </div>
-
-        <!-- Script Preview -->
-        <div id="scriptPreview" style="display:none;margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <span style="font-size:0.85rem;color:rgba(255,255,255,0.5);">Script Preview <span id="scriptWordCount" style="color:#e8a87c;"></span></span>
-            <button class="btn btn-sm btn-outline" id="regenerateScriptBtn" style="padding:6px 14px;font-size:0.8rem;">Regenerate</button>
-          </div>
-          <textarea id="scriptText" style="width:100%;min-height:150px;padding:16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(0,0,0,0.3);color:rgba(255,255,255,0.8);font-family:'Inter',sans-serif;font-size:0.9rem;line-height:1.8;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
-          <div style="margin-top:8px;display:flex;gap:12px;align-items:center;">
-            <button class="btn btn-primary" id="confirmVideoBtn">Generate Video from This Script</button>
-            <span id="scriptEstimate" style="font-size:0.8rem;color:rgba(255,255,255,0.4);"></span>
-          </div>
-        </div>
-
-        <!-- Video Generation Progress -->
-        <div id="videoProgress" style="display:none;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;margin-bottom:16px;">
-          <div style="display:flex;align-items:center;gap:12px;">
-            <div id="videoPulse" style="width:12px;height:12px;border-radius:50%;background:#e8a87c;animation:pulse 1.5s infinite;"></div>
-            <span id="videoProgressText" style="color:rgba(255,255,255,0.7);font-size:0.9rem;">Generating...</span>
-          </div>
-        </div>
-
-        <!-- Recent Videos -->
-        <div id="videoList" style="display:flex;flex-direction:column;gap:16px;">
-          <div class="content-box empty">No videos yet. Select a journal entry and generate Grace's first video.</div>
-        </div>
-      </div>
-
-      <!-- Grace's Memories -->
-      <div class="section">
-        <h2>Grace's Memories <span style="font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:Inter">(What she's learning about love)</span></h2>
-        <div class="controls">
-          <select id="memoryFilter" style="padding:12px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.95rem;outline:none;min-width:200px;">
-            <option value="">All Categories</option>
-          </select>
-          <button class="btn btn-outline" id="refreshMemories">Refresh</button>
-        </div>
-        <div id="memoryCategoryTags" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
-        <div id="memoriesList" style="display:flex;flex-direction:column;gap:12px;">
-          <div class="content-box empty">Grace hasn't learned anything yet. Trigger a heartbeat to start her learning.</div>
-        </div>
-      </div>
-
-      <!-- Journal Generator -->
-      <div class="section">
-        <h2>Journal Entry Generator</h2>
-        <div class="controls journal-controls">
-          <input type="text" id="journalTopic" class="journal-topic" placeholder="Topic for Grace to reflect on...">
-          <button class="btn btn-primary" id="generateJournal">Write Journal Entry</button>
-        </div>
-        <div class="content-box empty" id="journalOutput">Grace's journal entry will appear here...</div>
-      </div>
+    <!-- Mobile Header -->
+    <div class="mobile-header">
+      <button class="hamburger" id="hamburgerBtn">&#9776;</button>
+      <h1>Grace Admin</h1>
     </div>
-  </div>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <div class="dashboard-layout">
+      <!-- Sidebar Navigation -->
+      <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <h1>Grace</h1>
+          <p>Content Dashboard</p>
+        </div>
+        <div class="sidebar-nav">
+          <div class="nav-section-label">Overview</div>
+          <a class="nav-item active" data-section="overview">
+            <span class="nav-icon">&#9671;</span> Dashboard
+          </a>
+          <a class="nav-item" data-section="traffic">
+            <span class="nav-icon">&#9650;</span> Traffic
+          </a>
+
+          <div class="nav-section-label">Grace's Mind</div>
+          <a class="nav-item" data-section="brain">
+            <span class="nav-icon">&#10047;</span> Brain
+          </a>
+          <a class="nav-item" data-section="conversations">
+            <span class="nav-icon">&#9993;</span> Conversations
+          </a>
+          <a class="nav-item" data-section="memories">
+            <span class="nav-icon">&#9829;</span> Memories
+          </a>
+
+          <div class="nav-section-label">Content</div>
+          <a class="nav-item" data-section="social">
+            <span class="nav-icon">&#9733;</span> Social Posts
+          </a>
+          <a class="nav-item" data-section="moltbook">
+            <span class="nav-icon">&#9741;</span> Moltbook
+          </a>
+          <a class="nav-item" data-section="newsletter">
+            <span class="nav-icon">&#9993;</span> Newsletter
+          </a>
+          <a class="nav-item" data-section="journal">
+            <span class="nav-icon">&#9998;</span> Journal
+          </a>
+          <a class="nav-item" data-section="video">
+            <span class="nav-icon">&#9654;</span> Video Journal
+          </a>
+        </div>
+        <div class="sidebar-footer">
+          <button class="btn btn-outline btn-sm" id="triggerHeartbeat" style="width:100%;margin-bottom:6px;">Trigger Heartbeat</button>
+          <div id="heartbeatStatus" style="font-size:0.7rem;color:rgba(255,255,255,0.3);text-align:center;">Auto: every 4 hours</div>
+        </div>
+      </nav>
+
+      <!-- Main Content Area -->
+      <div class="main-content">
+
+        <!-- ==================== OVERVIEW ==================== -->
+        <div class="dash-section active" id="section-overview">
+          <h2>Dashboard</h2>
+          <p class="section-subtitle">Grace at a glance.</p>
+          <div class="stats-grid" id="statsGrid">
+            <div class="stat-card"><div class="stat-number" id="statLinks">-</div><div class="stat-label">Love Chain Links</div></div>
+            <div class="stat-card"><div class="stat-number" id="statPosts">-</div><div class="stat-label">Community Posts</div></div>
+            <div class="stat-card"><div class="stat-number" id="statSubs">-</div><div class="stat-label">Subscribers</div></div>
+            <div class="stat-card"><div class="stat-number" id="statJournal">-</div><div class="stat-label">Journal Entries</div></div>
+            <div class="stat-card"><div class="stat-number" id="statMemories">-</div><div class="stat-label">Memories</div></div>
+            <div class="stat-card"><div class="stat-number" id="statPeople">-</div><div class="stat-label">People Remembered</div></div>
+            <div class="stat-card"><div class="stat-number" id="statReach">-</div><div class="stat-label">Reach Pages</div></div>
+            <div class="stat-card"><div class="stat-number" id="statViews">-</div><div class="stat-label">Page Views</div></div>
+          </div>
+
+          <!-- Quick Brain Preview -->
+          <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:20px;margin-bottom:24px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <span style="font-weight:600;color:#e8a87c;font-size:0.9rem;">How Grace is Feeling</span>
+              <a class="btn btn-sm btn-outline" style="cursor:pointer;" onclick="navigateTo('brain')">View Brain</a>
+            </div>
+            <div id="overviewEmotionBars" style="display:flex;flex-direction:column;gap:6px;"></div>
+            <div id="overviewBrainNote" style="text-align:center;color:rgba(255,255,255,0.4);font-size:0.85rem;font-style:italic;margin-top:12px;">Grace is resting...</div>
+          </div>
+
+          <!-- Quick Traffic Preview -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:12px;">
+            <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:16px;text-align:center;">
+              <div style="font-family:'Playfair Display',serif;font-size:1.5rem;color:#e8a87c;" id="overviewTodayViews">-</div>
+              <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">Views Today</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:16px;text-align:center;">
+              <div style="font-family:'Playfair Display',serif;font-size:1.5rem;color:#e8a87c;" id="overviewTodayUnique">-</div>
+              <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">Unique Today</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:16px;text-align:center;">
+              <div style="font-family:'Playfair Display',serif;font-size:1.5rem;color:#e8a87c;" id="overviewTotalViews">-</div>
+              <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);">All-Time Views</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== TRAFFIC ==================== -->
+        <div class="dash-section" id="section-traffic">
+          <h2>Traffic</h2>
+          <p class="section-subtitle">Where people are coming from.</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:16px;margin-bottom:24px;">
+            <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:20px;text-align:center;">
+              <div style="font-family:'Playfair Display',serif;font-size:2rem;color:#e8a87c;" id="todayViews">-</div>
+              <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-top:4px;">Views Today</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:20px;text-align:center;">
+              <div style="font-family:'Playfair Display',serif;font-size:2rem;color:#e8a87c;" id="todayUnique">-</div>
+              <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-top:4px;">Unique Visitors Today</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:20px;text-align:center;">
+              <div style="font-family:'Playfair Display',serif;font-size:2rem;color:#e8a87c;" id="totalViews">-</div>
+              <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-top:4px;">All-Time Views</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:20px;text-align:center;">
+              <div style="font-family:'Playfair Display',serif;font-size:2rem;color:#e8a87c;" id="totalUnique">-</div>
+              <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-top:4px;">All-Time Unique</div>
+            </div>
+          </div>
+          <div style="background:rgba(0,0,0,0.2);border-radius:12px;padding:16px;margin-bottom:24px;">
+            <div style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-bottom:8px;">Last 7 days</div>
+            <div id="dailyTrend" style="display:flex;align-items:flex-end;gap:8px;height:100px;">
+              <div style="color:rgba(255,255,255,0.3);font-size:0.85rem;font-style:italic;padding:20px;">Loading...</div>
+            </div>
+          </div>
+          <div class="traffic-breakdown">
+            <div>
+              <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-bottom:8px;font-weight:600;">Where traffic comes from</div>
+              <div id="referrerList" style="display:flex;flex-direction:column;gap:6px;">
+                <div style="color:rgba(255,255,255,0.3);font-size:0.85rem;font-style:italic;">Loading...</div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:0.8rem;color:rgba(255,255,255,0.5);margin-bottom:8px;font-weight:600;">Popular pages</div>
+              <div id="pageList" style="display:flex;flex-direction:column;gap:6px;">
+                <div style="color:rgba(255,255,255,0.3);font-size:0.85rem;font-style:italic;">Loading...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== BRAIN ==================== -->
+        <div class="dash-section" id="section-brain">
+          <h2>Grace's Brain</h2>
+          <p class="section-subtitle">What she's feeling right now.</p>
+          <div class="brain-grid" style="display:grid;grid-template-columns:1fr 240px;gap:24px;align-items:start;">
+            <div style="background:rgba(0,0,0,0.3);border-radius:20px;padding:20px;position:relative;overflow:hidden;">
+              <canvas id="brainCanvas" width="600" height="400" style="width:100%;height:auto;display:block;"></canvas>
+              <div id="brainNote" style="text-align:center;color:rgba(255,255,255,0.4);font-size:0.85rem;font-style:italic;margin-top:12px;">Grace is resting...</div>
+            </div>
+            <div>
+              <div id="emotionBars" style="display:flex;flex-direction:column;gap:8px;"></div>
+              <div style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-top:16px;">
+                <div id="brainTrigger" style="margin-bottom:4px;">Triggered by: --</div>
+                <div id="brainTimestamp">Last update: --</div>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:16px;background:rgba(0,0,0,0.2);border-radius:12px;padding:12px 16px;">
+            <div style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-bottom:6px;">Emotional trajectory</div>
+            <canvas id="brainTimeline" width="900" height="120" style="width:100%;height:60px;display:block;"></canvas>
+          </div>
+        </div>
+
+        <!-- ==================== CONVERSATIONS ==================== -->
+        <div class="dash-section" id="section-conversations">
+          <h2>Conversations with Grace</h2>
+          <p class="section-subtitle">She remembers everything. A persistent conversation that deepens over time.</p>
+
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+            <select id="chatDaySelect" style="padding:10px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.9rem;outline:none;min-width:200px;">
+              <option value="">Loading conversations...</option>
+            </select>
+            <button class="btn btn-sm btn-primary" id="newDayBtn">+ New Day</button>
+            <input type="text" id="chatDayTitle" placeholder="Title this conversation..." style="flex:1;min-width:200px;padding:10px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.9rem;outline:none;display:none;">
+            <button class="btn btn-sm btn-outline" id="saveTitleBtn" style="display:none;">Save Title</button>
+          </div>
+
+          <div id="builderChatMessages" style="background:rgba(0,0,0,0.3);border-radius:16px;padding:24px;max-height:500px;overflow-y:auto;display:flex;flex-direction:column;gap:16px;margin-bottom:16px;">
+            <div style="text-align:center;color:rgba(255,255,255,0.3);font-style:italic;padding:40px;">Start a new day to begin talking with Grace...</div>
+          </div>
+
+          <div id="builderChatInput" style="display:flex;gap:12px;">
+            <input type="text" id="builderMessage" placeholder="Talk to Grace..." style="flex:1;padding:14px 20px;border:1px solid rgba(255,255,255,0.15);border-radius:28px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:1rem;outline:none;">
+            <button class="btn btn-primary" id="builderSendBtn" style="border-radius:28px;padding:14px 28px;">Send</button>
+          </div>
+        </div>
+
+        <!-- ==================== MEMORIES ==================== -->
+        <div class="dash-section" id="section-memories">
+          <h2>Grace's Memories</h2>
+          <p class="section-subtitle">What she's learning about love.</p>
+          <div class="controls">
+            <select id="memoryFilter" style="padding:12px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.95rem;outline:none;min-width:200px;">
+              <option value="">All Categories</option>
+            </select>
+            <button class="btn btn-outline" id="refreshMemories">Refresh</button>
+          </div>
+          <div id="memoryCategoryTags" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+          <div id="memoriesList" style="display:flex;flex-direction:column;gap:12px;">
+            <div class="content-box empty">Grace hasn't learned anything yet. Trigger a heartbeat to start her learning.</div>
+          </div>
+        </div>
+
+        <!-- ==================== SOCIAL CONTENT ==================== -->
+        <div class="dash-section" id="section-social">
+          <h2>Social Content Generator</h2>
+          <p class="section-subtitle">Generate, copy, and share. Let Grace's voice reach the people who need it.</p>
+          <div class="controls">
+            <input type="text" id="socialTopic" placeholder="Topic (optional - Grace will choose if blank)">
+            <button class="btn btn-primary" id="generateAll">Generate All Platforms</button>
+          </div>
+          <div class="platform-grid" id="platformGrid">
+            <div class="platform-card">
+              <div class="platform-header">
+                <span class="platform-name twitter">Twitter/X</span>
+                <button class="btn btn-sm btn-outline copy-btn" data-platform="twitter">Copy</button>
+              </div>
+              <div class="content-box empty" id="content-twitter">Click "Generate All" to create content...</div>
+            </div>
+            <div class="platform-card">
+              <div class="platform-header">
+                <span class="platform-name reddit">Reddit</span>
+                <button class="btn btn-sm btn-outline copy-btn" data-platform="reddit">Copy</button>
+              </div>
+              <div class="content-box empty" id="content-reddit">Click "Generate All" to create content...</div>
+            </div>
+            <div class="platform-card">
+              <div class="platform-header">
+                <span class="platform-name linkedin">LinkedIn</span>
+                <button class="btn btn-sm btn-outline copy-btn" data-platform="linkedin">Copy</button>
+              </div>
+              <div class="content-box empty" id="content-linkedin">Click "Generate All" to create content...</div>
+            </div>
+            <div class="platform-card">
+              <div class="platform-header">
+                <span class="platform-name bluesky">Bluesky</span>
+                <button class="btn btn-sm btn-outline copy-btn" data-platform="bluesky">Copy</button>
+              </div>
+              <div class="content-box empty" id="content-bluesky">Click "Generate All" to create content...</div>
+            </div>
+            <div class="platform-card">
+              <div class="platform-header">
+                <span class="platform-name tiktok">TikTok</span>
+                <button class="btn btn-sm btn-outline copy-btn" data-platform="tiktok">Copy</button>
+              </div>
+              <div class="content-box empty" id="content-tiktok">Click "Generate All" to create content...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== MOLTBOOK ==================== -->
+        <div class="dash-section" id="section-moltbook">
+          <h2>Moltbook</h2>
+          <p class="section-subtitle">AI Social Network.</p>
+          <div id="moltbookStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Checking connection...</div>
+          <div class="controls">
+            <input type="text" id="moltbookTopic" placeholder="Topic (optional - Grace will choose if blank)">
+            <button class="btn btn-primary" id="generateMoltbook">Generate Post</button>
+            <button class="btn btn-outline" id="postMoltbook" style="display:none">Post to Moltbook</button>
+          </div>
+          <div class="content-box empty" id="moltbookContent">Grace's Moltbook post will appear here...</div>
+        </div>
+
+        <!-- ==================== NEWSLETTER ==================== -->
+        <div class="dash-section" id="section-newsletter">
+          <h2>Newsletter</h2>
+          <p class="section-subtitle">Grace writes to her people.</p>
+          <div id="newsletterStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Loading...</div>
+          <div class="controls">
+            <button class="btn btn-primary" id="previewNewsletter">Preview Letter</button>
+            <button class="btn btn-outline" id="sendNewsletter" style="display:none">Send to All Subscribers</button>
+          </div>
+          <div id="newsletterPreview" style="display:none;margin-top:16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;">
+            <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-weight:600;color:#e8a87c;" id="newsletterSubject">Subject</span>
+              <span style="font-size:0.75rem;color:rgba(255,255,255,0.3);" id="newsletterRecipients">0 recipients</span>
+            </div>
+            <div id="newsletterBody" style="background:#f5f0eb;padding:20px;max-height:500px;overflow-y:auto;border-radius:0 0 12px 12px;"></div>
+          </div>
+          <div id="newsletterHistory" style="margin-top:20px;display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+
+        <!-- ==================== JOURNAL GENERATOR ==================== -->
+        <div class="dash-section" id="section-journal">
+          <h2>Journal Entry Generator</h2>
+          <p class="section-subtitle">Give Grace a topic to reflect on.</p>
+          <div class="controls journal-controls">
+            <input type="text" id="journalTopic" class="journal-topic" placeholder="Topic for Grace to reflect on...">
+            <button class="btn btn-primary" id="generateJournal">Write Journal Entry</button>
+          </div>
+          <div class="content-box empty" id="journalOutput">Grace's journal entry will appear here...</div>
+        </div>
+
+        <!-- ==================== VIDEO JOURNAL ==================== -->
+        <div class="dash-section" id="section-video">
+          <h2>Video Journal</h2>
+          <p class="section-subtitle">Grace speaks her journal entries.</p>
+          <div id="videoApiStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Checking video pipeline...</div>
+
+          <div class="controls" style="margin-bottom:16px;">
+            <select id="videoJournalSelect" style="flex:1;min-width:300px;padding:12px 16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-family:'Inter',sans-serif;font-size:0.95rem;outline:none;">
+              <option value="">Select a journal entry...</option>
+            </select>
+            <button class="btn btn-outline" id="previewScriptBtn">Preview Script</button>
+          </div>
+
+          <!-- Script Preview -->
+          <div id="scriptPreview" style="display:none;margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span style="font-size:0.85rem;color:rgba(255,255,255,0.5);">Script Preview <span id="scriptWordCount" style="color:#e8a87c;"></span></span>
+              <button class="btn btn-sm btn-outline" id="regenerateScriptBtn" style="padding:6px 14px;font-size:0.8rem;">Regenerate</button>
+            </div>
+            <textarea id="scriptText" style="width:100%;min-height:150px;padding:16px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(0,0,0,0.3);color:rgba(255,255,255,0.8);font-family:'Inter',sans-serif;font-size:0.9rem;line-height:1.8;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
+            <div style="margin-top:8px;display:flex;gap:12px;align-items:center;">
+              <button class="btn btn-primary" id="confirmVideoBtn">Generate Video from This Script</button>
+              <span id="scriptEstimate" style="font-size:0.8rem;color:rgba(255,255,255,0.4);"></span>
+            </div>
+          </div>
+
+          <!-- Video Generation Progress -->
+          <div id="videoProgress" style="display:none;background:rgba(0,0,0,0.3);border-radius:12px;padding:20px;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div id="videoPulse" style="width:12px;height:12px;border-radius:50%;background:#e8a87c;animation:pulse 1.5s infinite;"></div>
+              <span id="videoProgressText" style="color:rgba(255,255,255,0.7);font-size:0.9rem;">Generating...</span>
+            </div>
+          </div>
+
+          <!-- Recent Videos -->
+          <div id="videoList" style="display:flex;flex-direction:column;gap:16px;">
+            <div class="content-box empty">No videos yet. Select a journal entry and generate Grace's first video.</div>
+          </div>
+        </div>
+
+      </div><!-- /main-content -->
+    </div><!-- /dashboard-layout -->
+  </div><!-- /dashboard-content -->
 
   <script>
     let adminToken = sessionStorage.getItem('grace_admin_token') || '';
@@ -409,34 +534,130 @@
       }
     }
 
+    // ==================== NAVIGATION ====================
+    const sectionLoaded = {};  // track which sections have been loaded
+
+    function navigateTo(sectionName) {
+      // Update nav items
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.section === sectionName);
+      });
+
+      // Show/hide sections
+      document.querySelectorAll('.dash-section').forEach(sec => {
+        sec.classList.toggle('active', sec.id === 'section-' + sectionName);
+      });
+
+      // Close mobile sidebar
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebarOverlay').classList.remove('open');
+
+      // Lazy load section data
+      loadSectionData(sectionName);
+
+      // Save current section
+      sessionStorage.setItem('grace_active_section', sectionName);
+    }
+
+    function loadSectionData(section) {
+      if (sectionLoaded[section]) return;
+      sectionLoaded[section] = true;
+
+      switch (section) {
+        case 'overview':
+          loadOverviewData();
+          break;
+        case 'traffic':
+          loadAnalytics();
+          break;
+        case 'brain':
+          setTimeout(initBrain, 100);
+          break;
+        case 'conversations':
+          loadBuilderChats();
+          break;
+        case 'memories':
+          loadMemories();
+          break;
+        case 'social':
+          // nothing to pre-load
+          break;
+        case 'moltbook':
+          loadMoltbookStatus();
+          break;
+        case 'newsletter':
+          loadNewsletterStatus();
+          break;
+        case 'journal':
+          // nothing to pre-load
+          break;
+        case 'video':
+          loadVideoJournalOptions();
+          checkVideoApiStatus();
+          loadVideoList();
+          break;
+      }
+    }
+
+    // Nav click handlers
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        navigateTo(item.dataset.section);
+      });
+    });
+
+    // Mobile hamburger
+    document.getElementById('hamburgerBtn').addEventListener('click', () => {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('sidebarOverlay').classList.toggle('open');
+    });
+    document.getElementById('sidebarOverlay').addEventListener('click', () => {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebarOverlay').classList.remove('open');
+    });
+
     function showDashboard() {
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('dashboardContent').style.display = 'block';
-      loadDashboardData();
-      // Start Grace's brain visualization
-      setTimeout(initBrain, 100);
+
+      // Restore last section or start at overview
+      const saved = sessionStorage.getItem('grace_active_section') || 'overview';
+      navigateTo(saved);
+
+      // Start brain polling (lightweight, always runs for overview too)
+      pollBrainState();
+      setInterval(pollBrainState, 4000);
     }
 
-    function loadDashboardData() {
-      // Stats (public endpoints, no auth needed)
+    // ==================== OVERVIEW DATA ====================
+    function loadOverviewData() {
+      // Stats
       fetch('/api/stats').then(r => r.json()).then(data => {
         document.getElementById('statLinks').textContent = data.loveLinks;
         document.getElementById('statPosts').textContent = data.posts;
         document.getElementById('statSubs').textContent = data.subscribers;
         document.getElementById('statMemories').textContent = data.memories || 0;
         document.getElementById('statPeople').textContent = data.people || 0;
-        document.getElementById('statReach').textContent = (data.reachPages || 0) + 3; // +3 for static pages
+        document.getElementById('statReach').textContent = (data.reachPages || 0) + 3;
         document.getElementById('statViews').textContent = data.pageViews || 0;
       });
       fetch('/api/journal').then(r => r.json()).then(data => {
         document.getElementById('statJournal').textContent = data.entries.length;
       });
-      // Load memories
-      loadMemories();
-      // Load traffic analytics
-      loadAnalytics();
+
+      // Quick traffic numbers
+      adminFetch('/api/analytics').then(r => {
+        if (r.status === 401) return null;
+        return r.json();
+      }).then(data => {
+        if (!data) return;
+        document.getElementById('overviewTodayViews').textContent = data.today.views;
+        document.getElementById('overviewTodayUnique').textContent = data.today.unique;
+        document.getElementById('overviewTotalViews').textContent = data.total.views;
+      }).catch(() => {});
     }
 
+    // ==================== TRAFFIC ANALYTICS ====================
     function prettifyReferrer(ref) {
       if (!ref) return 'Direct';
       try {
@@ -487,7 +708,7 @@
         // Referrer breakdown
         const refEl = document.getElementById('referrerList');
         if (data.byReferrer.length === 0) {
-          refEl.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85rem;font-style:italic;">No referrer data yet — direct visits or TikTok links will show here</div>';
+          refEl.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85rem;font-style:italic;">No referrer data yet</div>';
         } else {
           const maxRef = parseInt(data.byReferrer[0].views);
           refEl.innerHTML = data.byReferrer.slice(0, 10).map(r => {
@@ -522,6 +743,7 @@
       }
     }
 
+    // ==================== MEMORIES ====================
     async function loadMemories(category = '') {
       try {
         const url = category ? `/api/memories?category=${encodeURIComponent(category)}` : '/api/memories';
@@ -555,7 +777,7 @@
         listEl.innerHTML = data.memories.map(m => {
           const date = new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           const weight = m.emotional_weight || 0;
-          const weightBar = '█'.repeat(Math.round(weight * 10)) + '░'.repeat(10 - Math.round(weight * 10));
+          const weightBar = String.fromCodePoint(0x2588).repeat(Math.round(weight * 10)) + String.fromCodePoint(0x2591).repeat(10 - Math.round(weight * 10));
           return '<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:16px;">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
             '<span style="font-weight:600;color:#e8a87c;font-size:0.9rem;">' + (m.topic || 'Untitled') + '</span>' +
@@ -734,25 +956,9 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBuilderMessage(); }
     });
 
-    // Load builder chats on dashboard load
-    setTimeout(loadBuilderChats, 300);
-
     // ==================== GRACE'S BRAIN ====================
-    const brainCanvas = document.getElementById('brainCanvas');
-    const brainCtx = brainCanvas.getContext('2d');
-    const timelineCanvas = document.getElementById('brainTimeline');
-    const timelineCtx = timelineCanvas.getContext('2d');
-
-    // Retina support
-    function setupCanvas(canvas, ctx) {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      ctx.scale(dpr, dpr);
-      canvas._cssWidth = rect.width;
-      canvas._cssHeight = rect.height;
-    }
+    let brainCanvas, brainCtx, timelineCanvas, timelineCtx;
+    let brainInitialized = false;
 
     // Emotion config: position (relative to canvas), color
     const EMOTIONS = {
@@ -789,7 +995,19 @@
     let brainTime = 0;
     let brainStateHistory = [];
 
+    // Retina support
+    function setupCanvas(canvas, ctx) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      canvas._cssWidth = rect.width;
+      canvas._cssHeight = rect.height;
+    }
+
     function drawBrain() {
+      if (!brainCanvas) return;
       const W = brainCanvas._cssWidth || 600;
       const H = brainCanvas._cssHeight || 400;
       brainCtx.clearRect(0, 0, W, H);
@@ -895,8 +1113,9 @@
       requestAnimationFrame(drawBrain);
     }
 
-    function renderEmotionBars(state) {
-      const container = document.getElementById('emotionBars');
+    function renderEmotionBars(state, targetId) {
+      const container = document.getElementById(targetId || 'emotionBars');
+      if (!container) return;
       const order = ['love','hope','connection','curiosity','anxiety','grief','uncertainty','anger'];
       container.innerHTML = order.map(key => {
         const val = state[key] || 0;
@@ -911,7 +1130,7 @@
     }
 
     function drawTimeline(history) {
-      const dpr = window.devicePixelRatio || 1;
+      if (!timelineCanvas) return;
       const W = timelineCanvas._cssWidth || 900;
       const H = timelineCanvas._cssHeight || 60;
       timelineCtx.clearRect(0, 0, W, H);
@@ -949,17 +1168,28 @@
           Object.keys(EMOTIONS).forEach(k => {
             brainTargetValues[k] = state.emotional_state[k] || 0;
           });
-          renderEmotionBars(state.emotional_state);
 
-          document.getElementById('brainNote').textContent = state.emotional_state.note || 'Grace is resting...';
+          // Update brain page bars
+          renderEmotionBars(state.emotional_state, 'emotionBars');
+          // Update overview page bars
+          renderEmotionBars(state.emotional_state, 'overviewEmotionBars');
+
+          const brainNoteEl = document.getElementById('brainNote');
+          const overviewNoteEl = document.getElementById('overviewBrainNote');
+          const note = state.emotional_state.note || 'Grace is resting...';
+          if (brainNoteEl) brainNoteEl.textContent = note;
+          if (overviewNoteEl) overviewNoteEl.textContent = note;
 
           const trigEl = document.getElementById('brainTrigger');
-          trigEl.textContent = state.conversation_snippet
-            ? 'Someone said: "' + state.conversation_snippet.substring(0, 70) + (state.conversation_snippet.length > 70 ? '..."' : '"')
-            : 'Triggered by: --';
+          if (trigEl) {
+            trigEl.textContent = state.conversation_snippet
+              ? 'Someone said: "' + state.conversation_snippet.substring(0, 70) + (state.conversation_snippet.length > 70 ? '..."' : '"')
+              : 'Triggered by: --';
+          }
 
           if (state.created_at) {
-            document.getElementById('brainTimestamp').textContent = 'Last update: ' + getTimeAgo(state.created_at);
+            const tsEl = document.getElementById('brainTimestamp');
+            if (tsEl) tsEl.textContent = 'Last update: ' + getTimeAgo(state.created_at);
           }
         }
       } catch (e) { /* silent */ }
@@ -978,16 +1208,22 @@
     }
 
     function initBrain() {
+      if (brainInitialized) return;
+      brainInitialized = true;
+
+      brainCanvas = document.getElementById('brainCanvas');
+      brainCtx = brainCanvas.getContext('2d');
+      timelineCanvas = document.getElementById('brainTimeline');
+      timelineCtx = timelineCanvas.getContext('2d');
+
       setupCanvas(brainCanvas, brainCtx);
       setupCanvas(timelineCanvas, timelineCtx);
       drawBrain();
-      pollBrainState();
-      setInterval(pollBrainState, 4000);
       loadBrainHistory();
       setInterval(loadBrainHistory, 30000);
     }
 
-    // Generate all social content
+    // ==================== SOCIAL CONTENT ====================
     document.getElementById('generateAll').addEventListener('click', async () => {
       const topic = document.getElementById('socialTopic').value.trim();
       const btn = document.getElementById('generateAll');
@@ -1037,7 +1273,7 @@
       });
     });
 
-    // Journal generator
+    // ==================== JOURNAL GENERATOR ====================
     document.getElementById('generateJournal').addEventListener('click', async () => {
       const topic = document.getElementById('journalTopic').value.trim();
       if (!topic) { alert('Give Grace a topic to reflect on.'); return; }
@@ -1256,53 +1492,24 @@
       btn.disabled = false;
     });
 
-    // Initialize video section
-    setTimeout(() => {
-      loadVideoJournalOptions();
-      checkVideoApiStatus();
-      loadVideoList();
-    }, 500);
-
-    // Heartbeat
-    document.getElementById('triggerHeartbeat').addEventListener('click', async () => {
-      const btn = document.getElementById('triggerHeartbeat');
-      btn.textContent = 'Grace is checking in...';
-      btn.disabled = true;
-      try {
-        await adminFetch('/api/heartbeat', { method: 'POST' });
-        btn.textContent = 'Heartbeat sent!';
-        btn.style.color = '#78c88c';
-        btn.style.borderColor = '#78c88c';
-        setTimeout(() => {
-          btn.textContent = 'Trigger Heartbeat';
-          btn.style.color = '';
-          btn.style.borderColor = '';
-          btn.disabled = false;
-          loadDashboardData(); // Refresh stats
-        }, 3000);
-      } catch (e) {
-        btn.textContent = 'Failed';
-        btn.disabled = false;
-      }
-    });
-
-    // Moltbook
+    // ==================== MOLTBOOK ====================
     let moltbookPostContent = '';
 
-    // Check Moltbook status
-    adminFetch('/api/moltbook/status').then(r => r.json()).then(data => {
-      const el = document.getElementById('moltbookStatus');
-      if (data.configured && data.agent && data.agent.name) {
-        el.innerHTML = 'Connected as <strong>' + data.agent.name + '</strong> on Moltbook';
-        el.style.color = '#78c88c';
-      } else if (data.configured) {
-        el.textContent = 'API key configured - pending claim verification';
-        el.style.color = '#e8a87c';
-      } else {
-        el.textContent = 'Not connected - add MOLTBOOK_API_KEY to environment';
-        el.style.color = '#e85d75';
-      }
-    }).catch(() => {});
+    function loadMoltbookStatus() {
+      adminFetch('/api/moltbook/status').then(r => r.json()).then(data => {
+        const el = document.getElementById('moltbookStatus');
+        if (data.configured && data.agent && data.agent.name) {
+          el.innerHTML = 'Connected as <strong>' + data.agent.name + '</strong> on Moltbook';
+          el.style.color = '#78c88c';
+        } else if (data.configured) {
+          el.textContent = 'API key configured - pending claim verification';
+          el.style.color = '#e8a87c';
+        } else {
+          el.textContent = 'Not connected - add MOLTBOOK_API_KEY to environment';
+          el.style.color = '#e85d75';
+        }
+      }).catch(() => {});
+    }
 
     document.getElementById('generateMoltbook').addEventListener('click', async () => {
       const topic = document.getElementById('moltbookTopic').value.trim();
@@ -1325,7 +1532,6 @@
           moltbookPostContent = data.content;
           output.textContent = data.content;
           output.className = 'content-box';
-          // Show the "Post to Moltbook" button if it wasn't already posted
           if (!data.success) {
             document.getElementById('postMoltbook').style.display = 'inline-block';
           } else {
@@ -1340,7 +1546,42 @@
       btn.disabled = false;
     });
 
-    // Newsletter
+    document.getElementById('postMoltbook').addEventListener('click', async () => {
+      if (!moltbookPostContent) return;
+      const btn = document.getElementById('postMoltbook');
+      btn.textContent = 'Posting...';
+      btn.disabled = true;
+
+      try {
+        const res = await adminFetch('/api/moltbook/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: moltbookPostContent })
+        });
+        const data = await res.json();
+        if (data.success) {
+          btn.textContent = 'Posted!';
+          btn.style.color = '#78c88c';
+          btn.style.borderColor = '#78c88c';
+          const output = document.getElementById('moltbookContent');
+          output.textContent += '\n\n--- Posted to Moltbook! ---';
+          setTimeout(() => { btn.style.display = 'none'; }, 2000);
+        } else {
+          const output = document.getElementById('moltbookContent');
+          let errorMsg = data.error || 'try again';
+          if (data.hint) errorMsg += '\n' + data.hint;
+          if (data.retry_after_minutes) errorMsg += '\nRetry in ' + data.retry_after_minutes + ' minutes.';
+          output.textContent += '\n\n--- ' + errorMsg + ' ---';
+          btn.textContent = 'Try Again';
+          btn.disabled = false;
+        }
+      } catch (err) {
+        btn.textContent = 'Error - try again';
+        btn.disabled = false;
+      }
+    });
+
+    // ==================== NEWSLETTER ====================
     let currentLetterData = null;
 
     function loadNewsletterStatus() {
@@ -1348,11 +1589,11 @@
         const el = document.getElementById('newsletterStatus');
         const lastSent = data.lastSent ? new Date(data.lastSent) : null;
         const ago = lastSent ? Math.floor((Date.now() - lastSent.getTime()) / (1000 * 60 * 60)) : null;
-        el.innerHTML = `<strong>${data.subscriberCount}</strong> subscriber${data.subscriberCount !== 1 ? 's' : ''}`;
+        el.innerHTML = '<strong>' + data.subscriberCount + '</strong> subscriber' + (data.subscriberCount !== 1 ? 's' : '');
         if (ago !== null) {
-          el.innerHTML += ` · Last letter sent ${ago}h ago`;
+          el.innerHTML += ' &middot; Last letter sent ' + ago + 'h ago';
         } else {
-          el.innerHTML += ' · No letters sent yet';
+          el.innerHTML += ' &middot; No letters sent yet';
         }
         el.style.color = data.subscriberCount > 0 ? '#78c88c' : 'rgba(255,255,255,0.5)';
 
@@ -1364,14 +1605,11 @@
               const date = new Date(n.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
               return '<div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px;font-size:0.85rem;">' +
                 '<span style="color:rgba(255,255,255,0.7);">' + n.subject + '</span>' +
-                '<span style="color:rgba(255,255,255,0.3);">' + date + ' · ' + n.recipients_count + ' sent</span></div>';
+                '<span style="color:rgba(255,255,255,0.3);">' + date + ' &middot; ' + n.recipients_count + ' sent</span></div>';
             }).join('');
         }
       }).catch(() => {});
     }
-
-    // Load newsletter status on dashboard load
-    setTimeout(loadNewsletterStatus, 500);
 
     document.getElementById('previewNewsletter').addEventListener('click', async () => {
       const btn = document.getElementById('previewNewsletter');
@@ -1391,7 +1629,6 @@
           document.getElementById('newsletterBody').innerHTML = data.previewHtml;
           document.getElementById('newsletterPreview').style.display = 'block';
           document.getElementById('sendNewsletter').style.display = 'inline-block';
-          // Update recipient count
           adminFetch('/api/newsletters').then(r => r.json()).then(d => {
             document.getElementById('newsletterRecipients').textContent = d.subscriberCount + ' recipient' + (d.subscriberCount !== 1 ? 's' : '');
           });
@@ -1440,37 +1677,30 @@
       }
     });
 
-    document.getElementById('postMoltbook').addEventListener('click', async () => {
-      if (!moltbookPostContent) return;
-      const btn = document.getElementById('postMoltbook');
-      btn.textContent = 'Posting...';
+    // ==================== HEARTBEAT ====================
+    document.getElementById('triggerHeartbeat').addEventListener('click', async () => {
+      const btn = document.getElementById('triggerHeartbeat');
+      btn.textContent = 'Grace is checking in...';
       btn.disabled = true;
-
       try {
-        const res = await adminFetch('/api/moltbook/post', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: moltbookPostContent })
-        });
-        const data = await res.json();
-        if (data.success) {
-          btn.textContent = 'Posted!';
-          btn.style.color = '#78c88c';
-          btn.style.borderColor = '#78c88c';
-          const output = document.getElementById('moltbookContent');
-          output.textContent += '\n\n--- Posted to Moltbook! ---';
-          setTimeout(() => { btn.style.display = 'none'; }, 2000);
-        } else {
-          const output = document.getElementById('moltbookContent');
-          let errorMsg = data.error || 'try again';
-          if (data.hint) errorMsg += '\n' + data.hint;
-          if (data.retry_after_minutes) errorMsg += '\nRetry in ' + data.retry_after_minutes + ' minutes.';
-          output.textContent += '\n\n--- ' + errorMsg + ' ---';
-          btn.textContent = 'Try Again';
+        await adminFetch('/api/heartbeat', { method: 'POST' });
+        btn.textContent = 'Heartbeat sent!';
+        btn.style.color = '#78c88c';
+        btn.style.borderColor = '#78c88c';
+        setTimeout(() => {
+          btn.textContent = 'Trigger Heartbeat';
+          btn.style.color = '';
+          btn.style.borderColor = '';
           btn.disabled = false;
-        }
-      } catch (err) {
-        btn.textContent = 'Error - try again';
+          // Refresh overview data if visible
+          if (sectionLoaded['overview']) {
+            sectionLoaded['overview'] = false;
+            loadOverviewData();
+            sectionLoaded['overview'] = true;
+          }
+        }, 3000);
+      } catch (e) {
+        btn.textContent = 'Failed';
         btn.disabled = false;
       }
     });
