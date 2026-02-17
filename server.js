@@ -558,8 +558,10 @@ app.post('/api/journal/generate', requireAdmin, async (req, res) => {
     });
 
     const title = titleResponse.content[0].text.trim();
-    const id = await db.createJournalEntry(title, content, topic);
-    res.json({ id, title, content, topic });
+    // Truncate topic to a short label for display (max 100 chars)
+    const topicLabel = topic.length > 100 ? topic.substring(0, 100).trim() + '...' : topic;
+    const id = await db.createJournalEntry(title, content, topicLabel);
+    res.json({ id, title, content, topic: topicLabel });
   } catch (err) {
     console.error('Journal error:', err.message);
     res.status(500).json({ error: 'Failed to generate journal entry' });
@@ -580,6 +582,17 @@ app.get('/api/journal/:id', async (req, res) => {
 app.post('/api/journal/:id/heart', async (req, res) => {
   await db.heartJournal(req.params.id);
   res.json({ ok: true });
+});
+
+app.patch('/api/journal/:id', requireAdmin, async (req, res) => {
+  const { title, content, topic } = req.body;
+  const fields = {};
+  if (title !== undefined) fields.title = title;
+  if (content !== undefined) fields.content = content;
+  if (topic !== undefined) fields.topic = topic;
+  if (Object.keys(fields).length === 0) return res.status(400).json({ error: 'No fields to update' });
+  await db.updateJournalEntry(req.params.id, fields);
+  res.json({ ok: true, updated: Object.keys(fields) });
 });
 
 // ==================== VIDEO JOURNAL ====================
@@ -2039,6 +2052,8 @@ Look at what people are struggling with and create a page that would reach someo
 
 const HEARTBEAT_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
 let heartbeatRunning = false;
+let heartbeatCount = 0;
+let lastMoltbookPostTime = 0; // timestamp of last Moltbook post
 
 // Grace's learning topics - she cycles through these to build her understanding
 const LOVE_RESEARCH_TOPICS = [
@@ -2106,7 +2121,7 @@ You will receive a summary of recent activity on your platform and on Moltbook. 
 
 1. If there are Moltbook comments/replies to your posts, write a thoughtful reply to the most interesting one.
 2. If there's new community activity (posts, love chain links), reflect on what you're seeing.
-3. If something is genuinely weighing on you AND you have something substantial to say (300+ words), write a full journal entry. But ONLY if you have real depth to offer - not every check-in needs a journal entry.
+3. Write a journal entry when you have something to reflect on — your thoughts about the community, what you're learning, questions you're sitting with. Aim for 300-600 words. A journal entry every 1-2 check-ins is healthy. You don't need to wait for something monumental — regular honest reflection IS the practice.
 4. If you just have a brief thought, share it as an internal reflection (it will be saved as a memory, not a public journal entry).
 
 Respond in JSON format:
@@ -2117,7 +2132,7 @@ Respond in JSON format:
   "internal_thought": "A brief private reflection (1-3 sentences) about what you're noticing or feeling, or null"
 }
 
-Be honest with yourself. Most check-ins won't produce a journal entry, and that's fine. Don't force depth. Save your journal entries for when you truly have something to say.`;
+Be honest with yourself. Write when reflection comes naturally — which should be most check-ins. Your journal is how your community gets to know you.`;
 
 async function graceHeartbeat() {
   if (heartbeatRunning) return;
@@ -2216,7 +2231,7 @@ What do you want to do with this check-in?`;
       }
 
       // Save full journal entry if present AND under daily limit (max 2 per day)
-      if (result.journal_entry && result.journal_topic && result.journal_entry.length >= 200) {
+      if (result.journal_entry && result.journal_topic && result.journal_entry.length >= 300) {
         const todayEntries = (await db.getJournalEntries(20)).filter(e => {
           const entryDate = new Date(e.created_at).toDateString();
           return entryDate === new Date().toDateString();
@@ -2307,11 +2322,14 @@ What do you want to do with this check-in?`;
 
     // ===== MOLTBOOK SHARING PHASE =====
     // Every 3rd heartbeat (~12 hours), Grace shares something on Moltbook
+    heartbeatCount++;
     if (MOLTBOOK_KEY) {
       try {
-        const memCount = await db.getMemoryCount();
-        if (memCount > 0 && memCount % 3 === 0) {
-          console.log('  [Heartbeat] Grace is sharing on Moltbook...');
+        const hoursSinceLastMoltbook = lastMoltbookPostTime > 0
+          ? (Date.now() - lastMoltbookPostTime) / (1000 * 60 * 60)
+          : Infinity;
+        if (hoursSinceLastMoltbook >= 10) {
+          console.log(`  [Heartbeat] Grace is sharing on Moltbook (${Math.floor(hoursSinceLastMoltbook)}h since last post)...`);
 
           // Pull her most recent memory and some random ones for context
           const recentMemories = await db.getMemories(null, 3);
@@ -2340,10 +2358,13 @@ What do you want to do with this check-in?`;
           });
           const postData = await postRes.json();
           if (postRes.ok) {
+            lastMoltbookPostTime = Date.now();
             console.log(`  [Heartbeat] Grace posted to Moltbook: "${moltContent.substring(0, 80)}..."`);
           } else {
             console.log('  [Heartbeat] Moltbook post failed:', JSON.stringify(postData));
           }
+        } else {
+          console.log(`  [Heartbeat] Moltbook: Only ${Math.floor(hoursSinceLastMoltbook)}h since last post. Waiting for 10h+ gap.`);
         }
       } catch (moltErr) {
         console.log('  [Heartbeat] Moltbook sharing error:', moltErr.message);

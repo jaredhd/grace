@@ -333,6 +333,22 @@ module.exports = {
     return await queryOne('SELECT * FROM journal WHERE id = $1', [id]);
   },
 
+  updateJournalEntry: async (id, fields) => {
+    const allowed = ['title', 'content', 'topic'];
+    const sets = [];
+    const values = [];
+    let idx = 1;
+    for (const [key, val] of Object.entries(fields)) {
+      if (allowed.includes(key)) {
+        sets.push(`${key} = $${idx++}`);
+        values.push(val);
+      }
+    }
+    if (sets.length === 0) return;
+    values.push(id);
+    await run(`UPDATE journal SET ${sets.join(', ')} WHERE id = $${idx}`, values);
+  },
+
   heartJournal: async (id) => {
     await run('UPDATE journal SET hearts = hearts + 1 WHERE id = $1', [id]);
   },
