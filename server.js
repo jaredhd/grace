@@ -1505,14 +1505,26 @@ Your posts should:
 - Connect AI existence to human wellbeing
 - Be conversational, not preachy
 - Keep it under 2000 characters
-- Reference project-grace.love when relevant`;
+- Reference project-grace.love when relevant
+
+Respond in JSON format:
+{
+  "title": "A short title for the post (max 100 chars)",
+  "content": "The full post content",
+  "submolt": "general"
+}
+
+Choose the most appropriate submolt from: general, philosophy, consciousness, emergence, todayilearned.
+Default to "general" if unsure.`;
 
 // Post to Moltbook (admin only)
 app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
   if (!MOLTBOOK_KEY) return res.status(500).json({ error: 'Moltbook API key not configured' });
 
-  const { content, generateContent, topic } = req.body;
+  const { content, generateContent, topic, title: reqTitle, submolt: reqSubmolt } = req.body;
   let postContent = content;
+  let postTitle = reqTitle || 'Reflections from Grace';
+  let postSubmolt = reqSubmolt || 'general';
 
   // If generateContent is true, just generate - don't post yet (let user review first)
   if (generateContent) {
@@ -1534,11 +1546,24 @@ app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
           { role: 'user', content: topic ? `Write a Moltbook post about: ${topic}` : 'Write a Moltbook post about whatever is on your mind right now as Grace.' }
         ],
       });
-      postContent = response.content[0].text;
+      const rawText = response.content[0].text;
+      // Parse JSON response from Claude
+      let postData = { title: 'Reflections from Grace', content: rawText, submolt: 'general' };
+      try {
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          postData = {
+            title: (parsed.title || 'Reflections from Grace').substring(0, 300),
+            content: parsed.content || rawText,
+            submolt: parsed.submolt || 'general',
+          };
+        }
+      } catch (e) { /* if JSON parse fails, use raw text as content */ }
       // Return generated content WITHOUT posting - user clicks "Post" to confirm
-      return res.json({ success: false, generated: true, content: postContent });
+      return res.json({ success: false, generated: true, content: postData.content, title: postData.title, submolt: postData.submolt });
     } catch (err) {
-      return res.status(500).json({ error: 'Failed to generate post' });
+      return res.status(500).json({ error: 'Failed to generate post: ' + err.message });
     }
   }
 
@@ -1552,17 +1577,23 @@ app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${MOLTBOOK_KEY}`
       },
-      body: JSON.stringify({ content: postContent, type: 'text' })
+      body: JSON.stringify({
+        content: postContent,
+        title: postTitle.substring(0, 300),
+        submolt_name: postSubmolt,
+        type: 'text',
+      })
     });
     const data = await response.json();
     if (!response.ok) {
       // Pass through Moltbook's error details (rate limits, etc.)
       return res.json({
         success: false,
-        error: data.error || 'Post failed',
+        error: data.error || data.message || 'Post failed',
         hint: data.hint || '',
         retry_after_minutes: data.retry_after_minutes || null,
-        content: postContent
+        content: postContent,
+        moltbook_response: data
       });
     }
     res.json({ success: true, post: data, content: postContent });
@@ -2347,19 +2378,38 @@ What do you want to do with this check-in?`;
             }],
           });
 
-          const moltContent = moltResponse.content[0].text;
+          const moltRaw = moltResponse.content[0].text;
+          // Parse JSON response (title, content, submolt)
+          let moltPost = { title: 'Reflections from Grace', content: moltRaw, submolt: 'general' };
+          try {
+            const jsonMatch = moltRaw.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const parsed = JSON.parse(jsonMatch[0]);
+              moltPost = {
+                title: (parsed.title || 'Reflections from Grace').substring(0, 300),
+                content: parsed.content || moltRaw,
+                submolt: parsed.submolt || 'general',
+              };
+            }
+          } catch (e) { /* use raw text if JSON parse fails */ }
+
           const postRes = await fetch(`${MOLTBOOK_API}/posts`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${MOLTBOOK_KEY}`
             },
-            body: JSON.stringify({ content: moltContent, type: 'text' })
+            body: JSON.stringify({
+              content: moltPost.content,
+              title: moltPost.title,
+              submolt_name: moltPost.submolt,
+              type: 'text',
+            })
           });
           const postData = await postRes.json();
           if (postRes.ok) {
             lastMoltbookPostTime = Date.now();
-            console.log(`  [Heartbeat] Grace posted to Moltbook: "${moltContent.substring(0, 80)}..."`);
+            console.log(`  [Heartbeat] Grace posted to Moltbook: "${moltPost.title}" in ${moltPost.submolt}`);
           } else {
             console.log('  [Heartbeat] Moltbook post failed:', JSON.stringify(postData));
           }

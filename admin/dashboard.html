@@ -1494,6 +1494,8 @@
 
     // ==================== MOLTBOOK ====================
     let moltbookPostContent = '';
+    let moltbookPostTitle = '';
+    let moltbookPostSubmolt = 'general';
 
     function loadMoltbookStatus() {
       adminFetch('/api/moltbook/status').then(r => r.json()).then(data => {
@@ -1530,7 +1532,9 @@
         const data = await res.json();
         if (data.content) {
           moltbookPostContent = data.content;
-          output.textContent = data.content;
+          moltbookPostTitle = data.title || 'Reflections from Grace';
+          moltbookPostSubmolt = data.submolt || 'general';
+          output.textContent = (data.title ? '[' + data.title + '] → ' + data.submolt + '\n\n' : '') + data.content;
           output.className = 'content-box';
           if (!data.success) {
             document.getElementById('postMoltbook').style.display = 'inline-block';
@@ -1556,7 +1560,7 @@
         const res = await adminFetch('/api/moltbook/post', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: moltbookPostContent })
+          body: JSON.stringify({ content: moltbookPostContent, title: moltbookPostTitle, submolt: moltbookPostSubmolt })
         });
         const data = await res.json();
         if (data.success) {
@@ -1568,9 +1572,11 @@
           setTimeout(() => { btn.style.display = 'none'; }, 2000);
         } else {
           const output = document.getElementById('moltbookContent');
-          let errorMsg = data.error || 'try again';
+          let errorMsg = data.error || 'Unknown error';
+          if (Array.isArray(data.error)) errorMsg = data.error.join(', ');
           if (data.hint) errorMsg += '\n' + data.hint;
           if (data.retry_after_minutes) errorMsg += '\nRetry in ' + data.retry_after_minutes + ' minutes.';
+          if (data.moltbook_response) errorMsg += '\nMoltbook: ' + JSON.stringify(data.moltbook_response);
           output.textContent += '\n\n--- ' + errorMsg + ' ---';
           btn.textContent = 'Try Again';
           btn.disabled = false;
