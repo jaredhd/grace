@@ -1530,12 +1530,15 @@ async function verifyMoltbookPost(verification, authToken) {
     console.log(`  [Moltbook] Solving verification challenge...`);
     // Use Claude to parse the obfuscated math problem
     const solveResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 50,
-      system: 'You solve simple math word problems. The text is obfuscated with alternating case and random symbols — ignore all formatting and extract the math. Respond with ONLY the numeric answer with exactly 2 decimal places (e.g., "30.00"). Nothing else.',
+      model: 'claude-3-haiku-20240307',  // Haiku: fast, cheap, follows "just the number" perfectly
+      max_tokens: 20,
+      system: 'Solve the math word problem. The text uses alternating case and random symbols — ignore formatting. Reply with ONLY the number, 2 decimal places. Example: "30.00". No words, no work, just the number.',
       messages: [{ role: 'user', content: verification.challenge_text }],
     });
-    const answer = solveResponse.content[0].text.trim();
+    // Extract just the number from the response (Claude sometimes adds explanation)
+    const rawAnswer = solveResponse.content[0].text.trim();
+    const numberMatch = rawAnswer.match(/(\d+\.?\d*)/);
+    const answer = numberMatch ? parseFloat(numberMatch[1]).toFixed(2) : rawAnswer;
     console.log(`  [Moltbook] Challenge answer: ${answer}`);
 
     // Submit verification
