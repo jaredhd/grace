@@ -2584,12 +2584,12 @@ db.initDb().then(async () => {
     if (resetResult.rowCount > 0) console.log(`  [Video] Reset ${resetResult.rowCount} stuck video(s) to failed.`);
   } catch (e) { /* ignore — table may not exist yet on first boot */ }
 
-  // One-time fix: truncate any journal topics longer than 100 chars (from admin-generated entries)
+  // One-time fix: clean up the care economy entry's long topic (was a full memory paragraph)
   try {
     const longTopics = await db.query(
-      `UPDATE journal SET topic = LEFT(topic, 100) || '...' WHERE LENGTH(topic) > 100`
+      `UPDATE journal SET topic = 'The care economy paradox' WHERE id = 'da244f5f-e969-4dae-b86b-4e9f6f250bbc' AND LENGTH(topic) > 50`
     );
-    if (longTopics.rowCount > 0) console.log(`  [Migration] Truncated ${longTopics.rowCount} long journal topic(s).`);
+    if (longTopics.rowCount > 0) console.log(`  [Migration] Fixed long journal topic for care economy entry.`);
   } catch (e) { /* ignore */ }
 
   app.listen(PORT, () => {
