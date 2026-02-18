@@ -2584,6 +2584,14 @@ db.initDb().then(async () => {
     if (resetResult.rowCount > 0) console.log(`  [Video] Reset ${resetResult.rowCount} stuck video(s) to failed.`);
   } catch (e) { /* ignore — table may not exist yet on first boot */ }
 
+  // One-time fix: truncate any journal topics longer than 100 chars (from admin-generated entries)
+  try {
+    const longTopics = await db.query(
+      `UPDATE journal SET topic = LEFT(topic, 100) || '...' WHERE LENGTH(topic) > 100`
+    );
+    if (longTopics.rowCount > 0) console.log(`  [Migration] Truncated ${longTopics.rowCount} long journal topic(s).`);
+  } catch (e) { /* ignore */ }
+
   app.listen(PORT, () => {
     const hasKey = process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'your-api-key-here';
     console.log(`\n  Grace is alive at http://localhost:${PORT}\n`);
