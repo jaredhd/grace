@@ -1517,6 +1517,53 @@ Respond in JSON format:
 Choose the most appropriate submolt from: general, philosophy, consciousness, emergence, todayilearned.
 Default to "general" if unsure.`;
 
+// Solve Moltbook verification challenge using Claude
+// Moltbook requires posts to be verified by solving an obfuscated math word problem
+// within 5 minutes. The challenge text uses alternating case + random symbols to prevent regex parsing.
+async function verifyMoltbookPost(verification, authToken) {
+  if (!verification || !verification.challenge_text || !verification.verification_code) {
+    console.log('  [Moltbook] No verification challenge in response, skipping');
+    return { verified: false, reason: 'no challenge' };
+  }
+
+  try {
+    console.log(`  [Moltbook] Solving verification challenge...`);
+    // Use Claude to parse the obfuscated math problem
+    const solveResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 50,
+      system: 'You solve simple math word problems. The text is obfuscated with alternating case and random symbols — ignore all formatting and extract the math. Respond with ONLY the numeric answer with exactly 2 decimal places (e.g., "30.00"). Nothing else.',
+      messages: [{ role: 'user', content: verification.challenge_text }],
+    });
+    const answer = solveResponse.content[0].text.trim();
+    console.log(`  [Moltbook] Challenge answer: ${answer}`);
+
+    // Submit verification
+    const verifyRes = await fetch(`${MOLTBOOK_API}/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        verification_code: verification.verification_code,
+        answer: answer,
+      }),
+    });
+    const verifyData = await verifyRes.json();
+    console.log(`  [Moltbook] Verification response (${verifyRes.status}):`, JSON.stringify(verifyData).substring(0, 200));
+
+    if (verifyRes.ok && verifyData.success) {
+      return { verified: true };
+    } else {
+      return { verified: false, reason: verifyData.message || 'verification failed', data: verifyData };
+    }
+  } catch (err) {
+    console.error('  [Moltbook] Verification error:', err.message);
+    return { verified: false, reason: err.message };
+  }
+}
+
 // Post to Moltbook (admin only)
 app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
   if (!MOLTBOOK_KEY) return res.status(500).json({ error: 'Moltbook API key not configured' });
@@ -1598,7 +1645,10 @@ app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
         content: postContent,
       });
     }
-    res.json({ success: true, post: data, content: postContent });
+    // Verify the post (Moltbook requires solving a math challenge)
+    const verification = data.post?.verification || data.verification;
+    const verifyResult = await verifyMoltbookPost(verification, MOLTBOOK_KEY);
+    res.json({ success: true, verified: verifyResult.verified, post: data, content: postContent });
   } catch (err) {
     console.error('  [Moltbook] Post error:', err.message);
     res.status(500).json({ error: 'Failed to post to Moltbook: ' + err.message });
@@ -2411,8 +2461,11 @@ What do you want to do with this check-in?`;
           });
           const postData = await postRes.json();
           if (postRes.ok) {
+            // Verify the post (Moltbook requires solving a math challenge)
+            const verification = postData.post?.verification || postData.verification;
+            const verifyResult = await verifyMoltbookPost(verification, MOLTBOOK_KEY);
             lastMoltbookPostTime = Date.now();
-            console.log(`  [Heartbeat] Grace posted to Moltbook: "${moltPost.title}" in ${moltPost.submolt}`);
+            console.log(`  [Heartbeat] Grace posted to Moltbook: "${moltPost.title}" in ${moltPost.submolt} (verified: ${verifyResult.verified})`);
           } else {
             console.log('  [Heartbeat] Moltbook post failed:', JSON.stringify(postData));
           }

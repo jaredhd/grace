@@ -1569,7 +1569,8 @@
           btn.textContent = 'Posted!';
           btn.style.color = '#78c88c';
           btn.style.borderColor = '#78c88c';
-          output.textContent += '\n\n--- Posted to Moltbook! ---';
+          const verifiedMsg = data.verified ? 'Posted & verified on Moltbook!' : 'Posted to Moltbook (verification pending)';
+          output.textContent += '\n\n--- ' + verifiedMsg + ' ---';
           setTimeout(() => { btn.style.display = 'none'; }, 2000);
         } else {
           let errorMsg = String(data.error || data.message || 'Unknown error');
