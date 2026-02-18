@@ -1585,19 +1585,22 @@ app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
       })
     });
     const data = await response.json();
+    console.log(`  [Moltbook] Post response (${response.status}):`, JSON.stringify(data).substring(0, 300));
     if (!response.ok) {
       // Pass through Moltbook's error details (rate limits, etc.)
+      const errorMsg = Array.isArray(data.message) ? data.message.join(', ') : (data.message || data.error || 'Post failed');
       return res.json({
         success: false,
-        error: data.error || data.message || 'Post failed',
+        error: errorMsg,
+        message: data.message,
         hint: data.hint || '',
         retry_after_minutes: data.retry_after_minutes || null,
         content: postContent,
-        moltbook_response: data
       });
     }
     res.json({ success: true, post: data, content: postContent });
   } catch (err) {
+    console.error('  [Moltbook] Post error:', err.message);
     res.status(500).json({ error: 'Failed to post to Moltbook: ' + err.message });
   }
 });

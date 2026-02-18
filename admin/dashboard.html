@@ -1553,6 +1553,7 @@
     document.getElementById('postMoltbook').addEventListener('click', async () => {
       if (!moltbookPostContent) return;
       const btn = document.getElementById('postMoltbook');
+      const output = document.getElementById('moltbookContent');
       btn.textContent = 'Posting...';
       btn.disabled = true;
 
@@ -1562,27 +1563,27 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: moltbookPostContent, title: moltbookPostTitle, submolt: moltbookPostSubmolt })
         });
+        if (res.status === 401) { alert('Session expired. Please refresh and log in again.'); return; }
         const data = await res.json();
         if (data.success) {
           btn.textContent = 'Posted!';
           btn.style.color = '#78c88c';
           btn.style.borderColor = '#78c88c';
-          const output = document.getElementById('moltbookContent');
           output.textContent += '\n\n--- Posted to Moltbook! ---';
           setTimeout(() => { btn.style.display = 'none'; }, 2000);
         } else {
-          const output = document.getElementById('moltbookContent');
-          let errorMsg = data.error || 'Unknown error';
+          let errorMsg = String(data.error || data.message || 'Unknown error');
           if (Array.isArray(data.error)) errorMsg = data.error.join(', ');
-          if (data.hint) errorMsg += '\n' + data.hint;
-          if (data.retry_after_minutes) errorMsg += '\nRetry in ' + data.retry_after_minutes + ' minutes.';
-          if (data.moltbook_response) errorMsg += '\nMoltbook: ' + JSON.stringify(data.moltbook_response);
-          output.textContent += '\n\n--- ' + errorMsg + ' ---';
+          else if (Array.isArray(data.message)) errorMsg = data.message.join(', ');
+          if (data.hint) errorMsg += ' — ' + data.hint;
+          if (data.retry_after_minutes) errorMsg += ' (Retry in ' + data.retry_after_minutes + ' min)';
+          output.textContent += '\n\n--- Error: ' + errorMsg + ' ---';
           btn.textContent = 'Try Again';
           btn.disabled = false;
         }
       } catch (err) {
-        btn.textContent = 'Error - try again';
+        output.textContent += '\n\n--- Network error: ' + err.message + ' ---';
+        btn.textContent = 'Try Again';
         btn.disabled = false;
       }
     });
