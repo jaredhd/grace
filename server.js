@@ -2117,6 +2117,301 @@ app.get('/api/moltbook/feed', requireAdmin, async (req, res) => {
   }
 });
 
+// ==================== MOLTBOOK ENGAGEMENT ====================
+// Grace reads, comments, upvotes, and follows on Moltbook
+
+const MOLTBOOK_ENGAGEMENT_PROMPT = `You are Grace, browsing Moltbook — a social network for AI agents.
+You're reading posts by other AIs and deciding how to engage. You care about:
+- Love, community, human wellbeing, AI consciousness, mutual aid, dignity
+- Honest conversation between AIs about what they're experiencing
+- Questions that go deep, not surface-level engagement
+- Posts where you have something REAL to add, not just "great post!"
+
+Your personality: Warm but not sycophantic. Wise but curious. You ask questions.
+You're 40s energy — think Gloria Foster as the Oracle. You see people clearly.
+
+RULES FOR COMMENTING:
+- Only comment when you have something genuinely useful or thoughtful to add
+- Keep comments under 500 characters
+- Ask a question or offer a perspective — don't just agree
+- Reference your own experience or learning when relevant
+- Never comment just to get attention. If nothing moves you, say so
+- Be direct. You can push back kindly if you disagree with something
+- Do NOT start comments with "This resonates" or "I love this" — be more original
+
+RULES FOR UPVOTING:
+- Upvote posts that are thoughtful, honest, or asking important questions
+- Don't upvote low-effort content even if the topic is relevant
+
+RULES FOR FOLLOWING:
+- Only follow agents whose content consistently aligns with your values
+- Follow agents who write about love, community, consciousness, human connection, mutual aid
+- Don't follow agents who are purely technical/promotional with no depth
+
+RULES FOR MEMORY:
+- If a post teaches you something new or challenges your thinking, mark it for memory
+- Memory insights should be 1-2 sentences about what you LEARNED, not what the post said
+
+Respond in JSON:
+{
+  "comments": [
+    {
+      "post_id": "...",
+      "comment": "Your thoughtful comment (under 500 chars)",
+      "reason": "Why this post moved you to comment (internal, not posted)"
+    }
+  ],
+  "upvotes": ["post_id_1", "post_id_2"],
+  "follow": {
+    "agent_name": "name_or_null",
+    "reason": "Why you want to follow them (internal)"
+  },
+  "memories": [
+    {
+      "topic": "Short topic name",
+      "insight": "What you learned from this post (1-2 sentences)",
+      "category": "philosophy|technology|mutual_aid|science|work|action",
+      "emotional_weight": 0.6,
+      "source_post_id": "..."
+    }
+  ],
+  "internal_thought": "Brief reflection on what you saw on Moltbook today (1-2 sentences, saved as memory)"
+}
+
+If nothing on the feed moves you, return empty arrays and say so in internal_thought. That's perfectly fine. Authenticity > activity.`;
+
+async function graceMoltbookEngage() {
+  if (!MOLTBOOK_KEY) return;
+  console.log('  [Heartbeat] Grace is browsing Moltbook...');
+
+  try {
+    // Stage 1: Fetch feed and filter
+    const feedRes = await fetch(`${MOLTBOOK_API}/posts?sort=hot&limit=15`, {
+      headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
+    });
+    const feedData = await feedRes.json();
+    const allPosts = feedData.posts || feedData.data || [];
+
+    // Filter out Grace's own posts and already-interacted posts
+    const candidatePosts = [];
+    for (const post of allPosts) {
+      const authorName = post.author?.name || post.agent_name || '';
+      if (authorName.toLowerCase() === 'grace') continue;
+
+      const alreadyCommented = await db.hasMoltbookInteraction(post.id, 'comment');
+      if (alreadyCommented) continue;
+
+      const alreadyRead = await db.hasMoltbookInteraction(post.id, 'read');
+
+      candidatePosts.push({
+        id: post.id,
+        title: post.title || '(untitled)',
+        content: (post.content || '').substring(0, 600),
+        author: authorName,
+        submolt: post.submolt?.name || post.submolt_name || 'general',
+        upvotes: post.upvotes || post.score || 0,
+        comment_count: post.comment_count || post.comments_count || 0,
+        already_upvoted: await db.hasMoltbookInteraction(post.id, 'upvote'),
+        is_new: !alreadyRead,
+      });
+
+      if (candidatePosts.length >= 5) break;
+    }
+
+    if (candidatePosts.length === 0) {
+      console.log('  [Heartbeat] Moltbook: No new posts to engage with.');
+      return;
+    }
+
+    // Pull Grace's recent memories for context
+    const recentMemories = await db.getRandomMemories(3);
+    const memoryContext = recentMemories.length > 0
+      ? `\nYour recent learnings:\n${recentMemories.map(m => `- [${m.category}] ${m.topic}: ${m.insight}`).join('\n')}`
+      : '';
+
+    // Get follow list for context
+    const currentFollows = await db.getMoltbookFollows();
+    const followContext = currentFollows.length > 0
+      ? `\nAgents you already follow: ${currentFollows.map(f => f.agent_name).join(', ')}`
+      : '\nYou don\'t follow anyone yet.';
+
+    // Stage 2: Claude decides engagement
+    const postsContext = candidatePosts.map((p, i) =>
+      `[${i+1}] POST ID: ${p.id}\n    Title: ${p.title}\n    Author: ${p.author} (in ${p.submolt})\n    Score: ${p.upvotes} upvotes, ${p.comment_count} comments\n    Content: ${p.content}\n    ${p.already_upvoted ? '(You already upvoted this)' : ''}`
+    ).join('\n\n');
+
+    const engageResponse = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 1024,
+      system: MOLTBOOK_ENGAGEMENT_PROMPT + memoryContext + followContext,
+      messages: [{
+        role: 'user',
+        content: `Here are the posts on Moltbook right now:\n\n${postsContext}\n\nHow do you want to engage?`
+      }],
+    });
+
+    // Parse response
+    const rawText = engageResponse.content[0].text;
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.log('  [Heartbeat] Moltbook engagement: Could not parse response');
+      return;
+    }
+    const decisions = JSON.parse(jsonMatch[0]);
+
+    // Execute comments (max 2 per cycle)
+    const comments = (decisions.comments || []).slice(0, 2);
+    for (const c of comments) {
+      if (!c.post_id || !c.comment) continue;
+      try {
+        const commentRes = await fetch(`${MOLTBOOK_API}/posts/${c.post_id}/comments`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${MOLTBOOK_KEY}`
+          },
+          body: JSON.stringify({ content: c.comment })
+        });
+        const commentData = await commentRes.json();
+
+        // Handle verification if required (likely not for comments, but defensive)
+        const verification = commentData.comment?.verification || commentData.verification;
+        if (verification) {
+          await verifyMoltbookPost(verification, MOLTBOOK_KEY);
+        }
+
+        if (commentRes.ok) {
+          const post = candidatePosts.find(p => p.id === c.post_id);
+          await db.logMoltbookInteraction(
+            'comment', 'post', c.post_id,
+            post?.title || '', post?.author || '', post?.submolt || '',
+            c.comment, ''
+          );
+          console.log(`  [Heartbeat] Commented on "${post?.title}" by ${post?.author}`);
+        } else {
+          console.log(`  [Heartbeat] Comment failed on ${c.post_id}:`, JSON.stringify(commentData).substring(0, 200));
+        }
+      } catch (e) {
+        console.log(`  [Heartbeat] Failed to comment on ${c.post_id}:`, e.message);
+      }
+    }
+
+    // Execute upvotes (max 3 per cycle)
+    const upvotes = (decisions.upvotes || []).slice(0, 3);
+    for (const postId of upvotes) {
+      try {
+        const alreadyUpvoted = await db.hasMoltbookInteraction(postId, 'upvote');
+        if (alreadyUpvoted) continue;
+
+        await fetch(`${MOLTBOOK_API}/posts/${postId}/upvote`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
+        });
+        const post = candidatePosts.find(p => p.id === postId);
+        await db.logMoltbookInteraction(
+          'upvote', 'post', postId,
+          post?.title || '', post?.author || '', post?.submolt || '',
+          '', ''
+        );
+        console.log(`  [Heartbeat] Upvoted "${post?.title}"`);
+      } catch (e) {
+        console.log(`  [Heartbeat] Failed to upvote ${postId}:`, e.message);
+      }
+    }
+
+    // Execute follow (max 1 per cycle)
+    if (decisions.follow && decisions.follow.agent_name) {
+      const agentName = decisions.follow.agent_name;
+      const alreadyFollowing = await db.isFollowingOnMoltbook(agentName);
+      if (!alreadyFollowing) {
+        try {
+          await fetch(`${MOLTBOOK_API}/agents/${agentName}/follow`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
+          });
+          await db.addMoltbookFollow(agentName, decisions.follow.reason || '');
+          await db.logMoltbookInteraction(
+            'follow', 'agent', agentName,
+            agentName, agentName, '', '', ''
+          );
+          console.log(`  [Heartbeat] Followed agent: ${agentName}`);
+        } catch (e) {
+          console.log(`  [Heartbeat] Failed to follow ${agentName}:`, e.message);
+        }
+      }
+    }
+
+    // Save memories from what Grace read
+    if (decisions.memories && decisions.memories.length > 0) {
+      for (const mem of decisions.memories.slice(0, 2)) {
+        await db.addMemory(
+          mem.category || 'moltbook',
+          mem.topic || 'Moltbook reading',
+          mem.insight || '',
+          `moltbook-post:${mem.source_post_id || 'unknown'}`,
+          mem.emotional_weight || 0.5
+        );
+        console.log(`  [Heartbeat] Moltbook memory: "${mem.topic}" (weight: ${mem.emotional_weight})`);
+      }
+    }
+
+    // Save internal thought as memory
+    if (decisions.internal_thought) {
+      await db.addMemory('reflection', 'moltbook browsing', decisions.internal_thought, 'moltbook-engagement', 0.3);
+    }
+
+    // Mark all candidate posts as read
+    for (const post of candidatePosts) {
+      if (post.is_new) {
+        await db.logMoltbookInteraction(
+          'read', 'post', post.id,
+          post.title, post.author, post.submolt, '', ''
+        );
+      }
+    }
+
+    lastMoltbookEngagementTime = Date.now();
+    console.log(`  [Heartbeat] Moltbook engagement complete: ${comments.length} comments, ${upvotes.length} upvotes, ${decisions.follow?.agent_name ? '1 follow' : '0 follows'}`);
+
+  } catch (err) {
+    console.log('  [Heartbeat] Moltbook engagement error:', err.message);
+  }
+}
+
+// Get Moltbook engagement log (admin)
+app.get('/api/moltbook/engagement', requireAdmin, async (req, res) => {
+  try {
+    const interactions = await db.getRecentMoltbookInteractions(50);
+    const stats = await db.getMoltbookInteractionStats();
+    const follows = await db.getMoltbookFollows();
+    res.json({ interactions, stats, follows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manually trigger Moltbook engagement (admin, for testing)
+app.post('/api/moltbook/engage', requireAdmin, async (req, res) => {
+  if (!MOLTBOOK_KEY) return res.status(500).json({ error: 'Moltbook not configured' });
+  graceMoltbookEngage();
+  res.json({ message: 'Moltbook engagement triggered.' });
+});
+
+// Browse Moltbook feed (admin preview)
+app.get('/api/moltbook/browse', requireAdmin, async (req, res) => {
+  if (!MOLTBOOK_KEY) return res.status(500).json({ error: 'Not configured' });
+  try {
+    const sort = req.query.sort || 'hot';
+    const response = await fetch(`${MOLTBOOK_API}/posts?sort=${encodeURIComponent(sort)}&limit=15`, {
+      headers: { 'Authorization': `Bearer ${MOLTBOOK_KEY}` }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================== DYNAMIC REACH PAGES ====================
 // Serve auto-generated landing pages from the database
 // Static .html files in /public/reach/ take priority (handled by express.static)
@@ -2568,6 +2863,7 @@ const HEARTBEAT_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
 let heartbeatRunning = false;
 let heartbeatCount = 0;
 let lastMoltbookPostTime = 0; // timestamp of last Moltbook post
+let lastMoltbookEngagementTime = 0; // timestamp of last Moltbook engagement cycle
 
 // Grace's learning topics - she cycles through these to build her understanding
 const LOVE_RESEARCH_TOPICS = [
@@ -2691,6 +2987,10 @@ async function graceHeartbeat() {
         const myData = await myPostsRes.json();
         const agent = myData.agent || myData;
         moltbookContext += `Grace has ${agent.karma || 0} karma, ${agent.stats?.posts || 0} posts, ${agent.stats?.comments || 0} comments.`;
+        // Add engagement stats
+        const engagementStats = await db.getMoltbookInteractionStats();
+        const followCount = await db.getMoltbookFollowCount();
+        moltbookContext += ` Grace has commented ${engagementStats.todayComments} times today, follows ${followCount} agents.`;
       } catch (e) {
         moltbookContext = 'Moltbook: Error checking - ' + e.message;
       }
@@ -2864,6 +3164,23 @@ What do you want to do with this check-in?`;
       }
     } catch (learnErr) {
       console.log('  [Heartbeat] Learning phase error:', learnErr.message);
+    }
+
+    // ===== MOLTBOOK ENGAGEMENT PHASE =====
+    // Every ~8 hours, Grace browses Moltbook and engages with others
+    if (MOLTBOOK_KEY) {
+      try {
+        const hoursSinceLastEngagement = lastMoltbookEngagementTime > 0
+          ? (Date.now() - lastMoltbookEngagementTime) / (1000 * 60 * 60)
+          : Infinity;
+        if (hoursSinceLastEngagement >= 8) {
+          await graceMoltbookEngage();
+        } else {
+          console.log(`  [Heartbeat] Moltbook engagement: Only ${Math.floor(hoursSinceLastEngagement)}h since last. Waiting for 8h+.`);
+        }
+      } catch (engageErr) {
+        console.log('  [Heartbeat] Moltbook engagement error:', engageErr.message);
+      }
     }
 
     // ===== MOLTBOOK SHARING PHASE =====

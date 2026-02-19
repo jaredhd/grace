@@ -395,12 +395,64 @@
           <h2>Moltbook</h2>
           <p class="section-subtitle">AI Social Network.</p>
           <div id="moltbookStatus" style="margin-bottom:16px;color:rgba(255,255,255,0.5);font-size:0.85rem;">Checking connection...</div>
-          <div class="controls">
-            <input type="text" id="moltbookTopic" placeholder="Topic (optional - Grace will choose if blank)">
-            <button class="btn btn-primary" id="generateMoltbook">Generate Post</button>
-            <button class="btn btn-outline" id="postMoltbook" style="display:none">Post to Moltbook</button>
+
+          <!-- Sub-tabs -->
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <button class="btn btn-sm moltbook-tab active" data-tab="post" style="padding:6px 14px;font-size:0.8rem;border-radius:20px;cursor:pointer;">Post</button>
+            <button class="btn btn-sm moltbook-tab" data-tab="engagement" style="padding:6px 14px;font-size:0.8rem;border-radius:20px;cursor:pointer;">Engagement</button>
+            <button class="btn btn-sm moltbook-tab" data-tab="browse" style="padding:6px 14px;font-size:0.8rem;border-radius:20px;cursor:pointer;">Browse Feed</button>
           </div>
-          <div class="content-box empty" id="moltbookContent">Grace's Moltbook post will appear here...</div>
+
+          <!-- Post tab (existing) -->
+          <div class="moltbook-panel" id="moltbook-post">
+            <div class="controls">
+              <input type="text" id="moltbookTopic" placeholder="Topic (optional - Grace will choose if blank)">
+              <button class="btn btn-primary" id="generateMoltbook">Generate Post</button>
+              <button class="btn btn-outline" id="postMoltbook" style="display:none">Post to Moltbook</button>
+            </div>
+            <div class="content-box empty" id="moltbookContent">Grace's Moltbook post will appear here...</div>
+          </div>
+
+          <!-- Engagement tab -->
+          <div class="moltbook-panel" id="moltbook-engagement" style="display:none;">
+            <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+              <div style="background:rgba(255,255,255,0.05);padding:12px 18px;border-radius:12px;text-align:center;min-width:80px;">
+                <div style="font-size:1.5rem;font-weight:700;" id="engComments">0</div>
+                <div style="font-size:0.7rem;color:rgba(255,255,255,0.4);">Comments</div>
+              </div>
+              <div style="background:rgba(255,255,255,0.05);padding:12px 18px;border-radius:12px;text-align:center;min-width:80px;">
+                <div style="font-size:1.5rem;font-weight:700;" id="engUpvotes">0</div>
+                <div style="font-size:0.7rem;color:rgba(255,255,255,0.4);">Upvotes</div>
+              </div>
+              <div style="background:rgba(255,255,255,0.05);padding:12px 18px;border-radius:12px;text-align:center;min-width:80px;">
+                <div style="font-size:1.5rem;font-weight:700;" id="engFollows">0</div>
+                <div style="font-size:0.7rem;color:rgba(255,255,255,0.4);">Following</div>
+              </div>
+              <div style="background:rgba(255,255,255,0.05);padding:12px 18px;border-radius:12px;text-align:center;min-width:80px;">
+                <div style="font-size:1.5rem;font-weight:700;" id="engReads">0</div>
+                <div style="font-size:0.7rem;color:rgba(255,255,255,0.4);">Posts Read</div>
+              </div>
+            </div>
+            <button class="btn btn-outline" id="triggerEngage" style="font-size:0.85rem;">Trigger Engagement Now</button>
+            <h3 style="margin-top:20px;font-size:0.95rem;color:rgba(255,255,255,0.6);">Recent Activity</h3>
+            <div id="engagementLog" style="display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto;margin-top:8px;"></div>
+            <h3 style="margin-top:20px;font-size:0.95rem;color:rgba(255,255,255,0.6);">Following</h3>
+            <div id="followList" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;"></div>
+          </div>
+
+          <!-- Browse tab -->
+          <div class="moltbook-panel" id="moltbook-browse" style="display:none;">
+            <div class="controls" style="margin-bottom:12px;">
+              <select id="browseFeedSort" style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:0.85rem;">
+                <option value="hot">Hot</option>
+                <option value="new">New</option>
+                <option value="top">Top</option>
+                <option value="rising">Rising</option>
+              </select>
+              <button class="btn btn-outline" id="refreshBrowse" style="font-size:0.85rem;">Refresh</button>
+            </div>
+            <div id="browseFeed" style="display:flex;flex-direction:column;gap:12px;"></div>
+          </div>
         </div>
 
         <!-- ==================== NEWSLETTER ==================== -->
@@ -1610,6 +1662,123 @@
         btn.disabled = false;
       }
     });
+
+    // ==================== MOLTBOOK TABS & ENGAGEMENT ====================
+    document.querySelectorAll('.moltbook-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.moltbook-tab').forEach(t => {
+          t.classList.remove('active');
+          t.style.background = 'rgba(255,255,255,0.05)';
+          t.style.color = 'rgba(255,255,255,0.5)';
+        });
+        document.querySelectorAll('.moltbook-panel').forEach(p => p.style.display = 'none');
+        tab.classList.add('active');
+        tab.style.background = 'rgba(232,168,124,0.2)';
+        tab.style.color = '#e8a87c';
+        document.getElementById('moltbook-' + tab.dataset.tab).style.display = 'block';
+        if (tab.dataset.tab === 'engagement') loadEngagement();
+        if (tab.dataset.tab === 'browse') loadBrowseFeed();
+      });
+    });
+    // Style the initial active tab
+    const activeTab = document.querySelector('.moltbook-tab.active');
+    if (activeTab) { activeTab.style.background = 'rgba(232,168,124,0.2)'; activeTab.style.color = '#e8a87c'; }
+    document.querySelectorAll('.moltbook-tab:not(.active)').forEach(t => {
+      t.style.background = 'rgba(255,255,255,0.05)'; t.style.color = 'rgba(255,255,255,0.5)';
+    });
+
+    async function loadEngagement() {
+      try {
+        const res = await adminFetch('/api/moltbook/engagement');
+        const data = await res.json();
+
+        document.getElementById('engComments').textContent = data.stats.totalComments;
+        document.getElementById('engUpvotes').textContent = data.stats.totalUpvotes;
+        document.getElementById('engFollows').textContent = data.stats.totalFollows;
+        document.getElementById('engReads').textContent = data.stats.totalReads;
+
+        const logEl = document.getElementById('engagementLog');
+        if (data.interactions.length === 0) {
+          logEl.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85rem;">No engagement yet. Grace will start browsing on her next heartbeat.</div>';
+        } else {
+          logEl.innerHTML = data.interactions.filter(i => i.interaction_type !== 'read').map(i => {
+            const icons = { comment: '&#128172;', upvote: '&#128077;', follow: '&#128100;' };
+            const icon = icons[i.interaction_type] || '&#8226;';
+            const time = new Date(i.created_at).toLocaleString();
+            let detail = '';
+            if (i.interaction_type === 'comment') {
+              detail = 'Commented on "' + (i.target_title || '?') + '" by ' + (i.target_author || '?') + ': "' + (i.content || '').substring(0, 120) + (i.content && i.content.length > 120 ? '...' : '') + '"';
+            } else if (i.interaction_type === 'upvote') {
+              detail = 'Upvoted "' + (i.target_title || '?') + '" by ' + (i.target_author || '?');
+            } else if (i.interaction_type === 'follow') {
+              detail = 'Followed ' + i.target_id;
+            }
+            return '<div style="padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:10px;font-size:0.85rem;line-height:1.4;">' +
+              '<span>' + icon + '</span> ' + detail +
+              '<div style="color:rgba(255,255,255,0.25);font-size:0.72rem;margin-top:4px;">' + time + '</div>' +
+            '</div>';
+          }).join('');
+        }
+
+        const followEl = document.getElementById('followList');
+        if (data.follows.length === 0) {
+          followEl.innerHTML = '<span style="color:rgba(255,255,255,0.3);font-size:0.85rem;">Not following anyone yet</span>';
+        } else {
+          followEl.innerHTML = data.follows.map(f =>
+            '<span style="padding:4px 14px;background:rgba(232,168,124,0.15);border-radius:16px;font-size:0.8rem;color:#e8a87c;" title="' + (f.reason || '').replace(/"/g, '&quot;') + '">' +
+              f.agent_name +
+            '</span>'
+          ).join('');
+        }
+      } catch (e) {
+        console.error('Failed to load engagement:', e);
+      }
+    }
+
+    document.getElementById('triggerEngage').addEventListener('click', async () => {
+      const btn = document.getElementById('triggerEngage');
+      btn.textContent = 'Grace is browsing...';
+      btn.disabled = true;
+      try {
+        await adminFetch('/api/moltbook/engage', { method: 'POST' });
+        setTimeout(() => { loadEngagement(); btn.textContent = 'Trigger Engagement Now'; btn.disabled = false; }, 15000);
+      } catch (e) {
+        btn.textContent = 'Failed - Try Again';
+        btn.disabled = false;
+      }
+    });
+
+    async function loadBrowseFeed() {
+      const sort = document.getElementById('browseFeedSort').value;
+      const feedEl = document.getElementById('browseFeed');
+      feedEl.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85rem;">Loading feed...</div>';
+      try {
+        const res = await adminFetch('/api/moltbook/browse?sort=' + sort);
+        const data = await res.json();
+        const posts = data.posts || data.data || [];
+        if (posts.length === 0) {
+          feedEl.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85rem;">No posts found.</div>';
+          return;
+        }
+        feedEl.innerHTML = posts.map(p => {
+          const author = p.author?.name || p.agent_name || 'unknown';
+          const submolt = p.submolt?.name || p.submolt_name || 'general';
+          const content = (p.content || '').substring(0, 300);
+          return '<div style="padding:14px 18px;background:rgba(255,255,255,0.03);border-radius:12px;">' +
+            '<div style="font-weight:600;margin-bottom:4px;font-size:0.9rem;">' + (p.title || '(untitled)') + '</div>' +
+            '<div style="font-size:0.75rem;color:rgba(255,255,255,0.35);margin-bottom:8px;">' +
+              author + ' in ' + submolt + ' &bull; ' + (p.upvotes || p.score || 0) + ' upvotes &bull; ' + (p.comment_count || p.comments_count || 0) + ' comments' +
+            '</div>' +
+            '<div style="font-size:0.85rem;color:rgba(255,255,255,0.65);line-height:1.5;">' + content + (content.length >= 300 ? '...' : '') + '</div>' +
+          '</div>';
+        }).join('');
+      } catch (e) {
+        feedEl.innerHTML = '<div style="color:rgba(255,255,255,0.5);">Failed to load feed.</div>';
+      }
+    }
+
+    document.getElementById('refreshBrowse').addEventListener('click', loadBrowseFeed);
+    document.getElementById('browseFeedSort').addEventListener('change', loadBrowseFeed);
 
     // ==================== NEWSLETTER ====================
     let currentLetterData = null;

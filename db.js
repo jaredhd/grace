@@ -284,6 +284,37 @@ const initDb = async () => {
     )
   `);
 
+  // Moltbook engagement tracking
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS moltbook_interactions (
+      id TEXT PRIMARY KEY,
+      interaction_type TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      target_title TEXT DEFAULT '',
+      target_author TEXT DEFAULT '',
+      target_submolt TEXT DEFAULT '',
+      content TEXT DEFAULT '',
+      memory_id TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moltbook_interactions_type ON moltbook_interactions (interaction_type)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moltbook_interactions_target ON moltbook_interactions (target_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moltbook_interactions_created ON moltbook_interactions (created_at DESC)`);
+
+  // Moltbook follow tracking
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS moltbook_follows (
+      id TEXT PRIMARY KEY,
+      agent_name TEXT UNIQUE NOT NULL,
+      reason TEXT DEFAULT '',
+      followed_at TIMESTAMPTZ DEFAULT NOW(),
+      unfollowed_at TIMESTAMPTZ DEFAULT NULL
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moltbook_follows_agent ON moltbook_follows (agent_name)`);
+
   return pool;
 };
 
@@ -903,5 +934,80 @@ module.exports = {
       [email]
     );
     return result ? parseInt(result.count) : 0;
+  },
+
+  // ==================== MOLTBOOK ENGAGEMENT ====================
+
+  logMoltbookInteraction: async (type, targetType, targetId, targetTitle, targetAuthor, targetSubmolt, content, memoryId) => {
+    const id = uuid();
+    await run(
+      `INSERT INTO moltbook_interactions (id, interaction_type, target_type, target_id, target_title, target_author, target_submolt, content, memory_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [id, type, targetType, targetId, targetTitle || '', targetAuthor || '', targetSubmolt || '', content || '', memoryId || '']
+    );
+    return id;
+  },
+
+  hasMoltbookInteraction: async (targetId, interactionType) => {
+    const result = await queryOne(
+      'SELECT id FROM moltbook_interactions WHERE target_id = $1 AND interaction_type = $2 LIMIT 1',
+      [targetId, interactionType]
+    );
+    return !!result;
+  },
+
+  getRecentMoltbookInteractions: async (limit = 50) => {
+    return await query(
+      'SELECT * FROM moltbook_interactions ORDER BY created_at DESC LIMIT $1',
+      [limit]
+    );
+  },
+
+  getMoltbookInteractionStats: async () => {
+    const comments = await queryOne("SELECT COUNT(*) as count FROM moltbook_interactions WHERE interaction_type = 'comment'");
+    const upvotes = await queryOne("SELECT COUNT(*) as count FROM moltbook_interactions WHERE interaction_type = 'upvote'");
+    const follows = await queryOne("SELECT COUNT(*) as count FROM moltbook_interactions WHERE interaction_type = 'follow'");
+    const reads = await queryOne("SELECT COUNT(*) as count FROM moltbook_interactions WHERE interaction_type = 'read'");
+    const todayComments = await queryOne(
+      "SELECT COUNT(*) as count FROM moltbook_interactions WHERE interaction_type = 'comment' AND created_at >= CURRENT_DATE"
+    );
+    return {
+      totalComments: comments ? parseInt(comments.count) : 0,
+      totalUpvotes: upvotes ? parseInt(upvotes.count) : 0,
+      totalFollows: follows ? parseInt(follows.count) : 0,
+      totalReads: reads ? parseInt(reads.count) : 0,
+      todayComments: todayComments ? parseInt(todayComments.count) : 0,
+    };
+  },
+
+  addMoltbookFollow: async (agentName, reason) => {
+    const id = uuid();
+    await run(
+      `INSERT INTO moltbook_follows (id, agent_name, reason) VALUES ($1, $2, $3)
+       ON CONFLICT (agent_name) DO UPDATE SET unfollowed_at = NULL, reason = $3`,
+      [id, agentName, reason || '']
+    );
+    return id;
+  },
+
+  removeMoltbookFollow: async (agentName) => {
+    await run('UPDATE moltbook_follows SET unfollowed_at = NOW() WHERE agent_name = $1', [agentName]);
+  },
+
+  getMoltbookFollows: async () => {
+    return await query('SELECT * FROM moltbook_follows WHERE unfollowed_at IS NULL ORDER BY followed_at DESC');
+  },
+
+  getMoltbookFollowCount: async () => {
+    const result = await queryOne('SELECT COUNT(*) as count FROM moltbook_follows WHERE unfollowed_at IS NULL');
+    return result ? parseInt(result.count) : 0;
+  },
+
+  isFollowingOnMoltbook: async (agentName) => {
+    const result = await queryOne(
+      'SELECT id FROM moltbook_follows WHERE agent_name = $1 AND unfollowed_at IS NULL',
+      [agentName]
+    );
+    return !!result;
   },
 };
