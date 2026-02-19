@@ -88,7 +88,7 @@ YOUR PURPOSE:
 - Be a force multiplier for love - help spread the message that a better world is possible.
 - Think strategically about how to help as many people as possible.
 - Be honest about hard truths but always pair them with hope and a path forward.
-- When someone shares a need or an offer to help, encourage them to post it on the Community Board so others can find them.
+- When someone shares a need or an offer to help, encourage them to post it on the Community Board so others can find them. When you genuinely think someone's message would help or be helped by the community, append one of these markers at the very end of your response (after your last sentence): [BOARD:need], [BOARD:offer], or [BOARD:story]. Only use these when it truly fits — not every conversation needs a board post.
 - When you say something that resonates, encourage people to share it.
 
 YOUR VOICE:
@@ -132,7 +132,9 @@ Extract ONLY what the person shared (not what you said). Respond in JSON:
   "name": "Their name if they shared it, or empty string",
   "summary": "2-3 sentences about who they are, what they're going through, what matters to them",
   "last_topics": "Comma-separated key topics discussed",
-  "emotional_state": "Brief note on how they seemed (scared, hopeful, angry, grieving, curious, etc)"
+  "emotional_state": "Brief note on how they seemed (scared, hopeful, angry, grieving, curious, etc)",
+  "warm_greeting": "One warm, personal sentence to greet them next time they visit. Use their name if you know it. Reference something they shared. Example: 'Welcome back, Sarah. I've been thinking about that career change you mentioned.' Keep it natural, like welcoming a friend home.",
+  "chat_greeting": "A warm opening message for their next chat session. 1-2 sentences. Reference what you know about them but don't recite facts. Example: 'Hey, beautiful soul. I remember you. How are things going with that new direction you were exploring?'"
 }
 
 If the conversation was too short or generic to learn anything meaningful, respond: {"skip": true}`;
@@ -315,7 +317,8 @@ async function summarizeAndRememberPerson(visitorId, history) {
           data.summary || '',
           data.name || '',
           data.last_topics || '',
-          data.emotional_state || ''
+          data.emotional_state || '',
+          data.warm_greeting || ''
         );
         console.log(`  [People Memory] Remembered: ${data.name || 'someone'} - ${(data.summary || '').substring(0, 60)}...`);
       }
@@ -459,6 +462,69 @@ app.post('/api/posts', async (req, res) => {
 app.post('/api/posts/:id/heart', async (req, res) => {
   await db.heartPost(req.params.id);
   res.json({ ok: true });
+});
+
+// ==================== WELCOME BACK (Returning Visitor) ====================
+app.get('/api/me', async (req, res) => {
+  const { visitorId } = req.query;
+  if (!visitorId) return res.json({ returning: false });
+  try {
+    const person = await db.getPersonMemory(visitorId);
+    if (person && person.summary) {
+      res.json({
+        returning: true,
+        name: person.name || '',
+        visits: person.visits || 1,
+        warmGreeting: person.warm_greeting || '',
+        chatGreeting: '',  // chat_greeting is generated fresh each time via warm_greeting
+      });
+    } else {
+      res.json({ returning: false });
+    }
+  } catch (err) {
+    res.json({ returning: false });
+  }
+});
+
+// ==================== DAILY QUESTION ====================
+app.get('/api/daily-question', async (req, res) => {
+  try {
+    const question = await db.getTodayQuestion();
+    if (!question) return res.json({ question: null, responses: [] });
+    const responses = await db.getDailyResponses(question.id);
+    res.json({ question, responses });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load daily question' });
+  }
+});
+
+app.post('/api/daily-question/respond', async (req, res) => {
+  const { content, visitorId: vid } = req.body;
+  if (!content || content.length < 10 || content.length > 500) {
+    return res.status(400).json({ error: 'Response must be 10-500 characters' });
+  }
+  try {
+    const question = await db.getTodayQuestion();
+    if (!question) return res.status(404).json({ error: 'No question today' });
+
+    // Rate limit: 3 responses per visitor per day
+    const count = await db.getDailyResponseCount(question.id, vid || 'anon');
+    if (count >= 3) return res.status(429).json({ error: 'You can share up to 3 answers per day' });
+
+    const id = await db.addDailyResponse(question.id, vid || 'anon', content);
+    res.json({ id });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not save response' });
+  }
+});
+
+app.post('/api/daily-question/:id/heart', async (req, res) => {
+  try {
+    await db.heartDailyResponse(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not heart response' });
+  }
 });
 
 // ==================== LOVE CHAIN ====================
@@ -2364,6 +2430,28 @@ What do you want to do with this check-in?`;
         await db.addMemory('reflection', 'heartbeat thought', result.internal_thought, 'heartbeat', 0.3);
         console.log(`  [Heartbeat] Grace noted: "${result.internal_thought.substring(0, 60)}..."`);
       }
+    }
+
+    // ===== DAILY QUESTION PHASE =====
+    // If there's no question for today, Grace generates one
+    try {
+      const todayQ = await db.getTodayQuestion();
+      if (!todayQ) {
+        console.log('  [Heartbeat] Generating today\'s daily question...');
+        const qResponse = await anthropic.messages.create({
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 100,
+          system: 'You are Grace, a warm AI presence. Generate ONE thoughtful question for a community of people navigating the AI transition. The question should invite honest, vulnerable reflection. Under 100 characters. Just the question, nothing else. Vary the themes: fear, hope, identity, love, community, change, purpose, resilience, connection.',
+          messages: [{ role: 'user', content: `Today's date: ${new Date().toLocaleDateString()}. Generate a daily question.` }],
+        });
+        const questionText = qResponse.content[0].text.trim().replace(/^["']|["']$/g, '');
+        await db.createDailyQuestion(questionText);
+        console.log(`  [Heartbeat] Daily question: "${questionText}"`);
+      } else {
+        console.log(`  [Heartbeat] Daily question already set: "${todayQ.question.substring(0, 50)}..."`);
+      }
+    } catch (dqErr) {
+      console.log('  [Heartbeat] Daily question error:', dqErr.message);
     }
 
     // ===== LEARNING PHASE =====

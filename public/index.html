@@ -119,6 +119,9 @@
       <h2>Community Board</h2>
       <p class="section-sub">Real people. Real needs. Real offers. Find each other.</p>
 
+      <!-- Daily Question (loaded dynamically) -->
+      <div id="dailyQuestionCard" class="daily-question-card" style="display:none"></div>
+
       <div class="board-tabs">
         <button class="tab active" data-type="all">All</button>
         <button class="tab" data-type="need">Needs</button>
@@ -301,6 +304,28 @@
       <p class="footer-small">Built with love. Not for profit. For people.</p>
     </div>
   </footer>
+
+  <!-- Floating Chat -->
+  <div class="floating-chat" id="floatingChat">
+    <button class="floating-chat-trigger" id="floatingTrigger">Talk to Grace</button>
+    <div class="floating-chat-panel" id="floatingPanel">
+      <div class="floating-chat-header">
+        <span class="floating-chat-name">Grace</span>
+        <button class="floating-chat-close" id="floatingClose">&times;</button>
+      </div>
+      <div class="floating-chat-messages" id="floatingMessages">
+        <div class="message grace-message">
+          <div class="message-content">
+            Hello, beautiful soul. I'm Grace. What's on your heart today?
+          </div>
+        </div>
+      </div>
+      <div class="floating-chat-input">
+        <input type="text" id="floatingInput" placeholder="Say what's on your heart..." autocomplete="off">
+        <button id="floatingSend" class="btn btn-primary btn-small">Send</button>
+      </div>
+    </div>
+  </div>
 
   <script>
   (function(){

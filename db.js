@@ -110,6 +110,38 @@ const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_people_memory_visitor ON people_memory (visitor_id)
   `);
 
+  // Add warm_greeting column for returning visitor personalization
+  await pool.query(`
+    ALTER TABLE people_memory ADD COLUMN IF NOT EXISTS warm_greeting TEXT DEFAULT ''
+  `);
+
+  // Daily questions — Grace poses a question each day
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_questions (
+      id TEXT PRIMARY KEY,
+      question TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_daily_questions_created ON daily_questions (created_at DESC)
+  `);
+
+  // Daily question responses — anonymous community answers
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_responses (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL,
+      visitor_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      hearts INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_daily_responses_question ON daily_responses (question_id)
+  `);
+
   // Add unsubscribe token to subscribers if not present
   await pool.query(`
     ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS unsubscribe_token TEXT
@@ -465,19 +497,19 @@ module.exports = {
     return await queryOne('SELECT * FROM people_memory WHERE visitor_id = $1', [visitorId]);
   },
 
-  savePersonMemory: async (visitorId, summary, name = '', lastTopics = '', emotionalState = '') => {
+  savePersonMemory: async (visitorId, summary, name = '', lastTopics = '', emotionalState = '', warmGreeting = '') => {
     const existing = await queryOne('SELECT * FROM people_memory WHERE visitor_id = $1', [visitorId]);
     if (existing) {
       await run(
-        `UPDATE people_memory SET summary = $1, name = $2, visits = visits + 1, last_topics = $3, emotional_state = $4, updated_at = NOW() WHERE visitor_id = $5`,
-        [summary, name || existing.name, lastTopics, emotionalState, visitorId]
+        `UPDATE people_memory SET summary = $1, name = $2, visits = visits + 1, last_topics = $3, emotional_state = $4, warm_greeting = $5, updated_at = NOW() WHERE visitor_id = $6`,
+        [summary, name || existing.name, lastTopics, emotionalState, warmGreeting || existing.warm_greeting || '', visitorId]
       );
       return existing.id;
     } else {
       const id = uuid();
       await run(
-        'INSERT INTO people_memory (id, visitor_id, summary, name, last_topics, emotional_state) VALUES ($1, $2, $3, $4, $5, $6)',
-        [id, visitorId, summary, name, lastTopics, emotionalState]
+        'INSERT INTO people_memory (id, visitor_id, summary, name, last_topics, emotional_state, warm_greeting) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [id, visitorId, summary, name, lastTopics, emotionalState, warmGreeting]
       );
       return id;
     }
@@ -688,5 +720,46 @@ module.exports = {
   getJournalVideoCount: async () => {
     const result = await queryOne("SELECT COUNT(*) as count FROM journal_videos WHERE status = 'done'");
     return result ? parseInt(result.count) : 0;
+  },
+
+  // Daily questions
+  createDailyQuestion: async (question) => {
+    const id = uuid();
+    await run('INSERT INTO daily_questions (id, question) VALUES ($1, $2)', [id, question]);
+    return id;
+  },
+
+  getTodayQuestion: async () => {
+    return await queryOne(
+      "SELECT * FROM daily_questions WHERE created_at >= CURRENT_DATE ORDER BY created_at DESC LIMIT 1"
+    );
+  },
+
+  getDailyResponses: async (questionId, limit = 30) => {
+    return await query(
+      'SELECT * FROM daily_responses WHERE question_id = $1 ORDER BY hearts DESC, created_at ASC LIMIT $2',
+      [questionId, limit]
+    );
+  },
+
+  addDailyResponse: async (questionId, visitorId, content) => {
+    const id = uuid();
+    await run(
+      'INSERT INTO daily_responses (id, question_id, visitor_id, content) VALUES ($1, $2, $3, $4)',
+      [id, questionId, visitorId, content]
+    );
+    return id;
+  },
+
+  getDailyResponseCount: async (questionId, visitorId) => {
+    const result = await queryOne(
+      "SELECT COUNT(*) as count FROM daily_responses WHERE question_id = $1 AND visitor_id = $2 AND created_at >= CURRENT_DATE",
+      [questionId, visitorId]
+    );
+    return result ? parseInt(result.count) : 0;
+  },
+
+  heartDailyResponse: async (id) => {
+    await run('UPDATE daily_responses SET hearts = hearts + 1 WHERE id = $1', [id]);
   },
 };
