@@ -5,12 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   localStorage.setItem('grace_visitor_id', visitorId);
   let lastUserMessage = '';
 
-  // ==================== CHAT (shared between main + floating) ====================
-  const chatInput = document.getElementById('chatInput');
-  const chatSend = document.getElementById('chatSend');
-  const chatMessages = document.getElementById('chatMessages');
-
-  // Floating chat elements
+  // ==================== CHAT (floating panel only) ====================
   const floatingChat = document.getElementById('floatingChat');
   const floatingTrigger = document.getElementById('floatingTrigger');
   const floatingPanel = document.getElementById('floatingPanel');
@@ -21,18 +16,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let chatOpen = false;
 
-  // Shared send - works from either input
-  const sendMessage = async (inputEl) => {
-    const message = inputEl.value.trim();
+  const openChat = () => {
+    chatOpen = true;
+    floatingPanel.classList.add('open');
+    floatingTrigger.style.display = 'none';
+    floatingInput.focus();
+  };
+
+  const closeChat = () => {
+    chatOpen = false;
+    floatingPanel.classList.remove('open');
+    floatingTrigger.style.display = '';
+  };
+
+  const sendMessage = async () => {
+    const message = floatingInput.value.trim();
     if (!message) return;
     lastUserMessage = message;
     addMessage(message, 'user');
-    inputEl.value = '';
-
-    // Also clear the other input
-    if (inputEl === chatInput && floatingInput) floatingInput.value = '';
-    if (inputEl === floatingInput && chatInput) chatInput.value = '';
-
+    floatingInput.value = '';
     const typing = addTyping();
 
     try {
@@ -66,53 +68,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Add message to BOTH chat containers (main + floating)
   const addMessage = (text, sender) => {
     const className = `message ${sender === 'grace' ? 'grace-message' : 'user-message'}`;
     const html = `<div class="message-content">${escapeHtml(text)}</div>`;
-
-    const div1 = document.createElement('div');
-    div1.className = className;
-    div1.innerHTML = html;
-    chatMessages.appendChild(div1);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-
-    if (floatingMessages) {
-      const div2 = document.createElement('div');
-      div2.className = className;
-      div2.innerHTML = html;
-      floatingMessages.appendChild(div2);
-      floatingMessages.scrollTop = floatingMessages.scrollHeight;
-    }
-
-    return div1; // Return main chat element for actions
+    const div = document.createElement('div');
+    div.className = className;
+    div.innerHTML = html;
+    floatingMessages.appendChild(div);
+    floatingMessages.scrollTop = floatingMessages.scrollHeight;
+    return div;
   };
 
   const addTyping = () => {
-    const typingClass = 'message grace-message typing';
-    const typingHtml = '<div class="message-content">Grace is thinking with love...</div>';
-
-    const div1 = document.createElement('div');
-    div1.className = typingClass;
-    div1.innerHTML = typingHtml;
-    chatMessages.appendChild(div1);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-
-    let div2 = null;
-    if (floatingMessages) {
-      div2 = document.createElement('div');
-      div2.className = typingClass;
-      div2.innerHTML = typingHtml;
-      floatingMessages.appendChild(div2);
-      floatingMessages.scrollTop = floatingMessages.scrollHeight;
-    }
-
-    return { main: div1, floating: div2 };
+    const div = document.createElement('div');
+    div.className = 'message grace-message typing';
+    div.innerHTML = '<div class="message-content">Grace is thinking with love...</div>';
+    floatingMessages.appendChild(div);
+    floatingMessages.scrollTop = floatingMessages.scrollHeight;
+    return div;
   };
 
   const removeTyping = (typing) => {
-    if (typing.main && typing.main.parentNode) typing.main.remove();
-    if (typing.floating && typing.floating.parentNode) typing.floating.remove();
+    if (typing && typing.parentNode) typing.remove();
   };
 
   const addMessageActions = (msgEl, graceReply, userMessage) => {
@@ -153,9 +130,9 @@ document.addEventListener('DOMContentLoaded', () => {
       // Pre-fill the board form
       document.getElementById('postType').value = boardType;
       document.getElementById('postContent').value = userMessage;
-      // Scroll to community board
+      // Close chat and scroll to community board
+      closeChat();
       document.getElementById('community').scrollIntoView({ behavior: 'smooth' });
-      // Focus the content field after scroll
       setTimeout(() => document.getElementById('postContent').focus(), 600);
     });
     msgEl.appendChild(suggestion);
@@ -181,42 +158,20 @@ document.addEventListener('DOMContentLoaded', () => {
     return div.innerHTML;
   };
 
-  // Main chat input handlers
-  chatSend.addEventListener('click', () => sendMessage(chatInput));
-  chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(chatInput); });
+  // ==================== FLOATING CHAT CONTROLS ====================
+  floatingTrigger.addEventListener('click', openChat);
+  floatingClose.addEventListener('click', closeChat);
+  floatingSend.addEventListener('click', sendMessage);
+  floatingInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-  // ==================== FLOATING CHAT ====================
-  if (floatingTrigger && floatingPanel) {
-    floatingTrigger.addEventListener('click', () => {
-      chatOpen = true;
-      floatingPanel.classList.add('open');
-      floatingTrigger.style.display = 'none';
-      floatingInput.focus();
-    });
-
-    floatingClose.addEventListener('click', () => {
-      chatOpen = false;
-      floatingPanel.classList.remove('open');
-      floatingTrigger.style.display = '';
-    });
-
-    floatingSend.addEventListener('click', () => sendMessage(floatingInput));
-    floatingInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(floatingInput); });
-
-    // IntersectionObserver: hide floating chat when main chat section is visible
-    const talkSection = document.getElementById('talk');
-    if (talkSection && 'IntersectionObserver' in window) {
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            floatingChat.classList.add('hidden');
-          } else {
-            floatingChat.classList.remove('hidden');
-          }
-        });
-      }, { threshold: 0.3 });
-      observer.observe(talkSection);
-    }
+  // Nav and hero "Talk to Grace" buttons open the floating chat
+  const navTalkBtn = document.getElementById('navTalkBtn');
+  const heroTalkBtn = document.getElementById('heroTalkBtn');
+  if (navTalkBtn) {
+    navTalkBtn.addEventListener('click', (e) => { e.preventDefault(); openChat(); });
+  }
+  if (heroTalkBtn) {
+    heroTalkBtn.addEventListener('click', (e) => { e.preventDefault(); openChat(); });
   }
 
   // ==================== COMMUNITY BOARD ====================
@@ -266,15 +221,14 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // "Talk to Grace about this" links on board posts
+    // "Talk to Grace about this" opens the floating chat with context
     boardPosts.querySelectorAll('.talk-about-post').forEach(btn => {
       btn.addEventListener('click', () => {
         const postContent = btn.dataset.content;
         const postType = btn.dataset.type;
         const prefix = postType === 'need' ? 'Someone needs help: ' : postType === 'offer' ? 'Someone is offering: ' : 'Someone shared: ';
-        chatInput.value = prefix + postContent.substring(0, 150);
-        document.getElementById('talk').scrollIntoView({ behavior: 'smooth' });
-        setTimeout(() => chatInput.focus(), 600);
+        floatingInput.value = prefix + postContent.substring(0, 150);
+        openChat();
       });
     });
   };
@@ -454,7 +408,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const date = new Date(entry.created_at).toLocaleDateString('en-US', {
         year: 'numeric', month: 'long', day: 'numeric'
       });
-      // Show first 300 chars as preview
       const preview = entry.content.length > 300
         ? entry.content.substring(0, 300) + '...'
         : entry.content;
@@ -474,7 +427,6 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }).join('');
 
-    // Read more toggle
     journalEntries.querySelectorAll('.journal-read-more').forEach(btn => {
       btn.addEventListener('click', () => {
         const entry = btn.closest('.journal-entry');
@@ -492,7 +444,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // Heart journal entries
     journalEntries.querySelectorAll('.journal-heart').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
@@ -503,7 +454,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // Share journal entries
     journalEntries.querySelectorAll('.share-msg-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         shareText(btn.dataset.text, "From Grace's Journal:");
@@ -541,7 +491,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Also submit on Enter in email field
   document.getElementById('subEmail').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('subSubmit').click();
   });
@@ -587,7 +536,6 @@ document.addEventListener('DOMContentLoaded', () => {
         heroStats.innerHTML = parts.map(p => `<span>${p}</span>`).join('<span class="stat-divider">&#183;</span>');
       }
 
-      // Update subscriber count
       const subCount = document.getElementById('subCount');
       if (data.subscribers > 0) {
         subCount.textContent = `${data.subscribers} ${data.subscribers === 1 ? 'person has' : 'people have'} joined the movement.`;
@@ -612,18 +560,10 @@ document.addEventListener('DOMContentLoaded', () => {
           floatingTrigger.textContent = `Hi, ${data.name}`;
         }
 
-        // Replace default greeting in main chat
-        const firstMsg = chatMessages.querySelector('.grace-message .message-content');
-        if (firstMsg && data.chatGreeting) {
-          firstMsg.textContent = data.chatGreeting;
-        }
-
         // Replace default greeting in floating chat
-        if (floatingMessages) {
-          const floatingFirstMsg = floatingMessages.querySelector('.grace-message .message-content');
-          if (floatingFirstMsg && data.chatGreeting) {
-            floatingFirstMsg.textContent = data.chatGreeting;
-          }
+        const floatingFirstMsg = floatingMessages.querySelector('.grace-message .message-content');
+        if (floatingFirstMsg && data.chatGreeting) {
+          floatingFirstMsg.textContent = data.chatGreeting;
         }
       }
     } catch (err) {
