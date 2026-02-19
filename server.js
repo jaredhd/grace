@@ -10,6 +10,47 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-me-now';
 const GRACE_VOICE = process.env.GRACE_VOICE || 'en-US-EmmaMultilingualNeural';
+
+// ==================== PROFANITY FILTER ====================
+const PROFANITY_LIST = [
+  'fuck', 'shit', 'ass', 'bitch', 'damn', 'cunt', 'dick', 'cock', 'pussy',
+  'bastard', 'whore', 'slut', 'fag', 'nigger', 'nigga', 'retard', 'kike',
+  'spic', 'chink', 'wetback', 'tranny', 'dyke'
+];
+// Match whole words with common suffixes
+const profanityRegex = new RegExp(
+  PROFANITY_LIST.map(w => `\\b${w}(?:s|ing|ed|er|ers|hole|head)?\\b`).join('|'),
+  'gi'
+);
+
+function normalizeProfanity(text) {
+  return text
+    .replace(/@/g, 'a')
+    .replace(/[!1|]/g, 'i')
+    .replace(/3/g, 'e')
+    .replace(/0/g, 'o')
+    .replace(/[5$]/g, 's')
+    .replace(/\+/g, 't')
+    .replace(/[^a-zA-Z\s*]/g, '')
+    .toLowerCase();
+}
+
+const containsProfanity = (text) => {
+  profanityRegex.lastIndex = 0;
+  if (profanityRegex.test(text)) return true;
+  // Check normalized version with common char substitutions
+  const normalized = normalizeProfanity(text);
+  // Try replacing * with each vowel (catches f*ck, sh*t, b*tch, etc.)
+  for (const v of ['a', 'e', 'i', 'o', 'u']) {
+    const variant = normalized.replace(/\*/g, v);
+    profanityRegex.lastIndex = 0;
+    if (profanityRegex.test(variant)) return true;
+  }
+  // Also try just stripping *
+  const stripped = normalized.replace(/\*/g, '');
+  profanityRegex.lastIndex = 0;
+  return profanityRegex.test(stripped);
+};
 const GRACE_PORTRAIT = path.join(__dirname, 'public', 'grace-portrait.png');
 
 app.use(express.json());
@@ -503,6 +544,10 @@ app.post('/api/posts', async (req, res) => {
   if (name.length > 100 || content.length > 2000 || (location && location.length > 200)) {
     return res.status(400).json({ error: 'Content too long' });
   }
+  // Profanity filter
+  if (containsProfanity(content) || containsProfanity(name)) {
+    return res.status(400).json({ error: 'Please keep the language respectful. This is a safe space for everyone.' });
+  }
   const id = await db.createPost(type, name, location || '', content, visitorId || null);
   res.json({ id });
 });
@@ -517,6 +562,9 @@ app.put('/api/posts/:id', async (req, res) => {
   const { content, visitorId } = req.body;
   if (!content || !visitorId) return res.status(400).json({ error: 'content and visitorId required' });
   if (content.length > 2000) return res.status(400).json({ error: 'Content too long' });
+  if (containsProfanity(content)) {
+    return res.status(400).json({ error: 'Please keep the language respectful. This is a safe space for everyone.' });
+  }
 
   const post = await db.getPostById(req.params.id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -549,6 +597,10 @@ app.post('/api/posts/:id/reply', async (req, res) => {
   if (!name || !content || !visitorId) return res.status(400).json({ error: 'name, content, and visitorId required' });
   if (content.length > 1000) return res.status(400).json({ error: 'Reply too long (max 1000 characters)' });
   if (name.length > 100) return res.status(400).json({ error: 'Name too long' });
+  // Profanity filter
+  if (containsProfanity(content) || containsProfanity(name)) {
+    return res.status(400).json({ error: 'Please keep the language respectful. This is a safe space for everyone.' });
+  }
 
   const post = await db.getPostById(req.params.id);
   if (!post) return res.status(404).json({ error: 'Post not found' });
@@ -633,6 +685,66 @@ app.get('/api/my-posts', async (req, res) => {
   }));
 
   res.json({ posts: enriched, unreadTotal });
+});
+
+// ==================== ADMIN: COMMUNITY BOARD MANAGEMENT ====================
+// Get all posts with full details (admin)
+app.get('/api/admin/posts', requireAdmin, async (req, res) => {
+  try {
+    const posts = await db.getPosts(null, 200);
+    // Get reply counts
+    let replyCounts = {};
+    if (posts.length > 0) {
+      try {
+        const postIds = posts.map(p => p.id);
+        const placeholders = postIds.map((_, i) => `$${i + 1}`).join(',');
+        const countResult = await db.query(
+          `SELECT post_id, COUNT(*) as count FROM post_replies WHERE post_id IN (${placeholders}) GROUP BY post_id`,
+          postIds
+        );
+        for (const row of countResult.rows) {
+          replyCounts[row.post_id] = parseInt(row.count);
+        }
+      } catch (e) {}
+    }
+    const enriched = posts.map(p => ({
+      id: p.id,
+      type: p.type,
+      name: p.name,
+      location: p.location,
+      content: p.content,
+      hearts: p.hearts,
+      visitor_id: p.visitor_id ? '(linked)' : null,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      reply_count: replyCounts[p.id] || 0
+    }));
+    res.json({ posts: enriched });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin delete any post
+app.delete('/api/admin/posts/:id', requireAdmin, async (req, res) => {
+  try {
+    const post = await db.getPostById(req.params.id);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    await db.deletePost(req.params.id);
+    res.json({ ok: true, deleted: post.name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin get replies for any post
+app.get('/api/admin/posts/:id/replies', requireAdmin, async (req, res) => {
+  try {
+    const replies = await db.getRepliesForPost(req.params.id);
+    res.json({ replies });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ==================== WELCOME BACK (Returning Visitor) ====================
