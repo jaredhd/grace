@@ -89,8 +89,18 @@
         <a href="/#community">Community</a>
         <a href="#talk" class="nav-cta">Talk to Grace</a>
       </div>
+      <button class="hamburger" id="hamburger" aria-label="Menu" aria-expanded="false">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+      </button>
     </div>
   </nav>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="/#vision">Vision</a>
+    <a href="/#community">Community</a>
+    <a href="#talk" class="nav-cta">Talk to Grace</a>
+  </div>
 
   <div class="reach-page">
     <div class="reach-hero">
@@ -146,5 +156,6 @@
     else{fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:d,keepalive:true}).catch(function(){});}
   })();
   </script>
+  <script src="/hamburger.js"></script>
 </body>
 </html>

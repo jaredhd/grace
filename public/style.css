@@ -1260,13 +1260,106 @@ body {
   color: rgba(255,255,255,0.4);
 }
 
+/* ==================== HAMBURGER MENU ==================== */
+.hamburger {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hamburger-line {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--text);
+  margin: 5px 0;
+  border-radius: 2px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.hamburger.active .hamburger-line:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.hamburger.active .hamburger-line:nth-child(2) {
+  opacity: 0;
+}
+.hamburger.active .hamburger-line:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+.mobile-menu {
+  display: flex;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(250, 248, 245, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 99;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 100px 24px 40px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-20px);
+  transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s;
+  pointer-events: none;
+}
+
+.mobile-menu.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.mobile-menu a {
+  text-decoration: none;
+  color: var(--text);
+  font-size: 1.3rem;
+  font-weight: 500;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  padding: 12px 0;
+  transition: color 0.2s;
+}
+
+.mobile-menu a:hover {
+  color: var(--accent);
+}
+
+.mobile-menu .nav-cta {
+  margin-top: 16px;
+  background: var(--dark);
+  color: var(--cream) !important;
+  padding: 14px 32px;
+  border-radius: 32px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.mobile-menu .nav-cta:hover {
+  background: var(--deep);
+}
+
+body.menu-open {
+  overflow: hidden;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
-  .nav-links {
-    gap: 16px;
+  .hamburger {
+    display: block;
   }
 
-  .nav-links a:not(.nav-cta) {
+  .nav-links {
     display: none;
   }
 
