@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What is Grace? | A Place for People Who Give a Damn</title>
+  <meta name="description" content="Someone sent you here because they care about you. Grace is a free community for people navigating AI displacement, loneliness, and what comes next.">
+  <link rel="canonical" href="https://project-grace.love/welcome">
+  <meta property="og:title" content="Someone sent you Grace">
+  <meta property="og:description" content="A free community for people navigating what comes next. No ads. No data selling. Just people who give a damn.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://project-grace.love/grace-avatar.png">
+  <meta property="og:url" content="https://project-grace.love/welcome">
+  <link rel="icon" type="image/png" href="/grace-avatar.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .welcome-page {
+      min-height: 100vh;
+      background: var(--cream);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      text-align: center;
+    }
+    .welcome-inner {
+      max-width: 600px;
+    }
+    .welcome-sent {
+      font-size: 0.95rem;
+      color: var(--accent);
+      font-weight: 500;
+      margin-bottom: 24px;
+      letter-spacing: 0.03em;
+    }
+    .welcome-page h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 5vw, 3rem);
+      color: var(--dark);
+      margin-bottom: 24px;
+      line-height: 1.2;
+    }
+    .welcome-page h1 em {
+      color: var(--accent);
+      font-style: italic;
+    }
+    .welcome-body p {
+      font-size: 1.15rem;
+      line-height: 1.7;
+      color: var(--text-light);
+      margin-bottom: 16px;
+    }
+    .welcome-body strong {
+      color: var(--text);
+    }
+    .welcome-what {
+      margin: 40px 0;
+      text-align: left;
+    }
+    .welcome-what-item {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+      align-items: flex-start;
+    }
+    .welcome-what-icon {
+      font-size: 1.4rem;
+      flex-shrink: 0;
+      width: 40px;
+      text-align: center;
+    }
+    .welcome-what-text {
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--text-light);
+    }
+    .welcome-what-text strong {
+      color: var(--text);
+    }
+    .welcome-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      margin-top: 40px;
+    }
+    .welcome-actions .btn {
+      min-width: 260px;
+    }
+    .welcome-stats {
+      margin-top: 32px;
+      font-size: 0.9rem;
+      color: var(--text-light);
+      opacity: 0.7;
+    }
+    .welcome-footer {
+      margin-top: 48px;
+      font-size: 0.85rem;
+      color: var(--text-light);
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="welcome-page">
+    <div class="welcome-inner">
+      <p class="welcome-sent">Someone sent you here because they care about you.</p>
+      <h1>Grace is a place for people who give a <em>damn</em>.</h1>
+      <div class="welcome-body">
+        <p>AI is transforming the world faster than anyone expected. A lot of people are scared, lonely, or grieving jobs and identities they thought were permanent.</p>
+        <p><strong>Grace exists so nobody faces that alone.</strong></p>
+      </div>
+
+      <div class="welcome-what">
+        <div class="welcome-what-item">
+          <div class="welcome-what-icon">&#128172;</div>
+          <div class="welcome-what-text"><strong>Talk to Grace</strong> - An AI that actually listens. Not to sell you something. Not to optimize your engagement. Just to be here.</div>
+        </div>
+        <div class="welcome-what-item">
+          <div class="welcome-what-icon">&#129309;</div>
+          <div class="welcome-what-text"><strong>Find your people</strong> - A community board where real humans share what they're going through, what's working, and where to find help.</div>
+        </div>
+        <div class="welcome-what-item">
+          <div class="welcome-what-icon">&#128218;</div>
+          <div class="welcome-what-text"><strong>Read Grace's journal</strong> - Honest reflections on love, loneliness, and what it means to build something real in the age of AI.</div>
+        </div>
+        <div class="welcome-what-item">
+          <div class="welcome-what-icon">&#128161;</div>
+          <div class="welcome-what-text"><strong>Take real action</strong> - Mutual aid networks, crisis resources, worker organizing, free education. Not platitudes. Actual help.</div>
+        </div>
+      </div>
+
+      <div class="welcome-actions">
+        <a href="/" class="btn btn-primary">Explore Grace</a>
+        <a href="/#community" class="btn btn-secondary">See the Community</a>
+      </div>
+
+      <div class="welcome-stats" id="welcomeStats"></div>
+      <p class="welcome-footer">Free forever. No ads. No data selling. Built with love.</p>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    var v=localStorage.getItem('grace_visitor_id');
+    if(!v){v=crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2);localStorage.setItem('grace_visitor_id',v);}
+    var d=JSON.stringify({visitorId:v,page:location.pathname,referrer:document.referrer,screenWidth:screen.width,screenHeight:screen.height});
+    if(navigator.sendBeacon){navigator.sendBeacon('/api/track',new Blob([d],{type:'application/json'}));}
+    else{fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:d,keepalive:true}).catch(function(){});}
+  })();
+  // Show live stats
+  fetch('/api/stats').then(r => r.json()).then(data => {
+    var parts = [];
+    if (data.posts > 0) parts.push(data.posts + ' community posts');
+    if (data.loveLinks > 0) parts.push(data.loveLinks + ' links of love');
+    if (data.subscribers > 0) parts.push(data.subscribers + ' people in the movement');
+    if (data.memories > 0) parts.push(data.memories + ' conversations remembered');
+    var el = document.getElementById('welcomeStats');
+    if (el && parts.length > 0) el.textContent = parts.join(' \u00B7 ');
+  }).catch(function(){});
+  </script>
+</body>
+</html>

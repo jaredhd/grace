@@ -51,6 +51,10 @@ app.get('/journal', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'journal.html'));
 });
 
+app.get('/welcome', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'welcome.html'));
+});
+
 // Initialize Claude client
 const anthropic = new Anthropic.default({
   apiKey: process.env.ANTHROPIC_API_KEY,

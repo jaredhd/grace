@@ -433,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="journal-actions">
             <button class="journal-read-more">Read more</button>
             <button class="heart-btn journal-heart" data-id="${entry.id}">${entry.hearts} &#10084;</button>
-            <button class="share-msg-btn" data-text="${escapeHtml(entry.content.substring(0, 200))}">Share</button>
+            <button class="journal-share-btn" data-title="${escapeHtml(entry.title)}" data-text="${escapeHtml(entry.content.substring(0, 140))}" data-id="${entry.id}">Share this</button>
           </div>
         </article>
       `;
@@ -466,11 +466,42 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    journalEntries.querySelectorAll('.share-msg-btn').forEach(btn => {
+    journalEntries.querySelectorAll('.journal-share-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        shareText(btn.dataset.text, "From Grace's Journal:");
+        const title = btn.dataset.title;
+        const text = btn.dataset.text;
+        const id = btn.dataset.id;
+        const url = `${window.location.origin}/journal#${id}`;
+        const shareData = {
+          title: `Grace: "${title}"`,
+          text: `From Grace's Journal:\n\n"${text}..."\n\nRead more:`,
+          url: url,
+        };
+        if (navigator.share) {
+          navigator.share(shareData).catch(() => {});
+        } else {
+          const full = `${shareData.text}\n${url}`;
+          navigator.clipboard.writeText(full).then(() => {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Share this'; }, 2000);
+          });
+        }
       });
     });
+
+    // Scroll to specific entry if URL hash matches an entry ID
+    if (window.location.hash) {
+      const targetId = window.location.hash.substring(1);
+      const targetEntry = journalEntries.querySelector(`[data-id="${targetId}"]`);
+      if (targetEntry) {
+        targetEntry.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetEntry.style.boxShadow = '0 0 0 2px var(--accent)';
+        setTimeout(() => { targetEntry.style.boxShadow = ''; }, 3000);
+        // Auto-expand the entry
+        const readMore = targetEntry.querySelector('.journal-read-more');
+        if (readMore) readMore.click();
+      }
+    }
   };
 
   // ==================== SUBSCRIBE ====================
@@ -553,6 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       const heroStats = document.getElementById('heroStats');
       const parts = [];
+      if (data.memories > 0) parts.push(`${data.memories} conversations held`);
       if (data.loveLinks > 0) parts.push(`${data.loveLinks} links of love`);
       if (data.posts > 0) parts.push(`${data.posts} community posts`);
       if (data.subscribers > 0) parts.push(`${data.subscribers} in the movement`);
@@ -563,6 +595,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const subCount = document.getElementById('subCount');
       if (data.subscribers > 0) {
         subCount.textContent = `${data.subscribers} ${data.subscribers === 1 ? 'person has' : 'people have'} joined the movement.`;
+      }
+
+      // Community pulse — show proof of human presence
+      const pulse = document.getElementById('communityPulse');
+      if (pulse && data.people > 0) {
+        pulse.innerHTML = `<span class="pulse-dot"></span>${data.people} people have talked to Grace &middot; ${data.memories} conversations and counting`;
       }
     } catch (err) {}
   };

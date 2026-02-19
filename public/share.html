@@ -319,6 +319,19 @@
 
     <div class="share-divider"></div>
 
+    <!-- ==================== DIRECT LINK ==================== -->
+    <div class="share-section">
+      <h2>Send This Link</h2>
+      <p>The simplest way to share Grace. This page explains everything in 30 seconds — perfect for texting a friend.</p>
+      <div class="content-card">
+        <span class="platform-label platform-social">Text / DM / Email</span>
+        <p class="share-text" id="welcomeLink">project-grace.love/welcome</p>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('https://project-grace.love/welcome').then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy Link'},2000)})">Copy Link</button>
+      </div>
+    </div>
+
+    <div class="share-divider"></div>
+
     <!-- ==================== SHAREABLE MESSAGES ==================== -->
     <div class="share-section">
       <h2>Spread the Word</h2>
