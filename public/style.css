@@ -1345,6 +1345,15 @@ body {
 }
 
 /* ==================== REACH OUT / REPLY ==================== */
+.post-anon-note {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  opacity: 0.4;
+  font-style: italic;
+}
+
 .reach-out-btn {
   display: inline-block;
   margin-top: 8px;

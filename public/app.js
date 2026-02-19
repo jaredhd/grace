@@ -25,6 +25,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (authState.signedIn) {
       bar.innerHTML = `<span class="auth-status">Signed in as <strong>${escapeHtml(authState.name || authState.email)}</strong></span>`;
       bar.className = 'board-auth signed-in';
+      // Pre-fill post name for signed-in users
+      const postNameEl = document.getElementById('postName');
+      if (postNameEl && authState.name && !postNameEl.value) {
+        postNameEl.value = authState.name;
+      }
       updateJoinSection();
     } else {
       bar.innerHTML = `<span class="auth-status">Want to edit posts or get replies?</span> <button class="auth-sign-in-btn" id="authSignInBtn">Sign in</button>`;
@@ -319,10 +324,12 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }
 
-      // Reach out button (for signed-in users viewing others' owned posts)
+      // Reach out button (for anyone viewing others' owned posts)
       let reachOutBtn = '';
-      if (!p.is_mine && p.has_owner && authState.signedIn) {
+      if (!p.is_mine && p.has_owner) {
         reachOutBtn = `<button class="reach-out-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}">Reach out</button>`;
+      } else if (!p.is_mine && !p.has_owner) {
+        reachOutBtn = `<span class="post-anon-note">This person can't receive messages yet</span>`;
       }
 
       return `
@@ -639,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, name, location, content, visitorId: authState.signedIn ? visitorId : null })
+        body: JSON.stringify({ type, name, location, content, visitorId })
       });
 
       document.getElementById('postContent').value = '';
