@@ -250,6 +250,40 @@ const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_journal_videos_status ON journal_videos (status)
   `);
 
+  // Community board: post ownership
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS visitor_id TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_visitor ON posts (visitor_id)`);
+
+  // Community board: private replies
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS post_replies (
+      id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL,
+      visitor_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      read BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_post_replies_post ON post_replies (post_id)`);
+
+  // Subscriber identity: link to visitor_id
+  await pool.query(`ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS visitor_id TEXT`);
+
+  // Magic login codes
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS login_codes (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      code TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   return pool;
 };
 
@@ -275,10 +309,10 @@ module.exports = {
   query: async (text, params) => pool.query(text, params),
 
   // Community board
-  createPost: async (type, name, location, content) => {
+  createPost: async (type, name, location, content, visitorId = null) => {
     const id = uuid();
-    await run('INSERT INTO posts (id, type, name, location, content) VALUES ($1, $2, $3, $4, $5)',
-      [id, type, name, location, content]);
+    await run('INSERT INTO posts (id, type, name, location, content, visitor_id) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, type, name, location, content, visitorId]);
     return id;
   },
 
@@ -761,5 +795,113 @@ module.exports = {
 
   heartDailyResponse: async (id) => {
     await run('UPDATE daily_responses SET hearts = hearts + 1 WHERE id = $1', [id]);
+  },
+
+  // ==================== COMMUNITY BOARD: OWNERSHIP & REPLIES ====================
+  getPostById: async (id) => {
+    return await queryOne('SELECT * FROM posts WHERE id = $1', [id]);
+  },
+
+  updatePost: async (id, content) => {
+    await run('UPDATE posts SET content = $1, updated_at = NOW() WHERE id = $2', [content, id]);
+  },
+
+  deletePost: async (id) => {
+    await run('DELETE FROM post_replies WHERE post_id = $1', [id]);
+    await run('DELETE FROM posts WHERE id = $1', [id]);
+  },
+
+  getPostsByVisitor: async (visitorId) => {
+    return await query('SELECT * FROM posts WHERE visitor_id = $1 ORDER BY created_at DESC', [visitorId]);
+  },
+
+  createReply: async (postId, visitorId, name, content) => {
+    const id = uuid();
+    await run(
+      'INSERT INTO post_replies (id, post_id, visitor_id, name, content) VALUES ($1, $2, $3, $4, $5)',
+      [id, postId, visitorId, name, content]
+    );
+    return id;
+  },
+
+  getRepliesForPost: async (postId) => {
+    return await query('SELECT * FROM post_replies WHERE post_id = $1 ORDER BY created_at ASC', [postId]);
+  },
+
+  getUnreadReplyCount: async (visitorId) => {
+    const result = await queryOne(
+      `SELECT COUNT(*) as count FROM post_replies pr
+       JOIN posts p ON p.id = pr.post_id
+       WHERE p.visitor_id = $1 AND pr.read = false`,
+      [visitorId]
+    );
+    return result ? parseInt(result.count) : 0;
+  },
+
+  markRepliesRead: async (postId) => {
+    await run('UPDATE post_replies SET read = true WHERE post_id = $1', [postId]);
+  },
+
+  // ==================== AUTH: SUBSCRIBER IDENTITY ====================
+  linkVisitorToSubscriber: async (email, visitorId) => {
+    await run('UPDATE subscribers SET visitor_id = $1 WHERE email = $2', [visitorId, email]);
+  },
+
+  getSubscriberByVisitorId: async (visitorId) => {
+    return await queryOne(
+      'SELECT id, email, name, visitor_id FROM subscribers WHERE visitor_id = $1 AND (active = true OR active IS NULL)',
+      [visitorId]
+    );
+  },
+
+  getSubscriberByEmail: async (email) => {
+    return await queryOne(
+      'SELECT id, email, name, visitor_id, active FROM subscribers WHERE email = $1',
+      [email]
+    );
+  },
+
+  createLoginCode: async (email, code, expiresAt) => {
+    const id = uuid();
+    await run(
+      'INSERT INTO login_codes (id, email, code, expires_at) VALUES ($1, $2, $3, $4)',
+      [id, email, code, expiresAt]
+    );
+    return id;
+  },
+
+  verifyLoginCode: async (email, code) => {
+    const result = await queryOne(
+      `SELECT * FROM login_codes WHERE email = $1 AND code = $2 AND used = false AND expires_at > NOW()
+       ORDER BY created_at DESC LIMIT 1`,
+      [email, code]
+    );
+    if (result) {
+      await run('UPDATE login_codes SET used = true WHERE id = $1', [result.id]);
+      return true;
+    }
+    return false;
+  },
+
+  updateSubscriberVisitorId: async (email, newVisitorId) => {
+    // Get old visitor_id before updating
+    const sub = await queryOne('SELECT visitor_id FROM subscribers WHERE email = $1', [email]);
+    const oldVisitorId = sub ? sub.visitor_id : null;
+
+    // Update subscriber to new visitor_id
+    await run('UPDATE subscribers SET visitor_id = $1 WHERE email = $2', [newVisitorId, email]);
+
+    // Transfer post ownership from old to new visitor_id
+    if (oldVisitorId && oldVisitorId !== newVisitorId) {
+      await run('UPDATE posts SET visitor_id = $1 WHERE visitor_id = $2', [newVisitorId, oldVisitorId]);
+    }
+  },
+
+  getRecentLoginCodeCount: async (email) => {
+    const result = await queryOne(
+      `SELECT COUNT(*) as count FROM login_codes WHERE email = $1 AND created_at > NOW() - INTERVAL '1 hour'`,
+      [email]
+    );
+    return result ? parseInt(result.count) : 0;
   },
 };

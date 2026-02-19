@@ -459,25 +459,180 @@ app.get('/api/grace-state/history', requireAdmin, async (req, res) => {
 
 // ==================== COMMUNITY BOARD ====================
 app.get('/api/posts', async (req, res) => {
-  const { type } = req.query;
+  const { type, visitorId } = req.query;
   const posts = await db.getPosts(type || null);
-  res.json({ posts });
+
+  // Batch-fetch reply counts for all posts
+  let replyCounts = {};
+  if (posts.length > 0) {
+    try {
+      const postIds = posts.map(p => p.id);
+      const placeholders = postIds.map((_, i) => `$${i + 1}`).join(',');
+      const countResult = await db.query(
+        `SELECT post_id, COUNT(*) as count FROM post_replies WHERE post_id IN (${placeholders}) GROUP BY post_id`,
+        postIds
+      );
+      for (const row of countResult.rows) {
+        replyCounts[row.post_id] = parseInt(row.count);
+      }
+    } catch (e) { /* ignore if table doesn't exist yet */ }
+  }
+
+  // Enrich posts with ownership and reply info
+  const enriched = posts.map(p => ({
+    id: p.id,
+    type: p.type,
+    name: p.name,
+    location: p.location,
+    content: p.content,
+    hearts: p.hearts,
+    created_at: p.created_at,
+    updated_at: p.updated_at,
+    is_mine: visitorId ? (p.visitor_id === visitorId) : false,
+    has_owner: !!p.visitor_id,
+    reply_count: replyCounts[p.id] || 0
+  }));
+
+  res.json({ posts: enriched });
 });
 
 app.post('/api/posts', async (req, res) => {
-  const { type, name, location, content } = req.body;
+  const { type, name, location, content, visitorId } = req.body;
   if (!type || !name || !content) return res.status(400).json({ error: 'type, name, and content required' });
   if (!['need', 'offer', 'story'].includes(type)) return res.status(400).json({ error: 'type must be need, offer, or story' });
   if (name.length > 100 || content.length > 2000 || (location && location.length > 200)) {
     return res.status(400).json({ error: 'Content too long' });
   }
-  const id = await db.createPost(type, name, location || '', content);
+  const id = await db.createPost(type, name, location || '', content, visitorId || null);
   res.json({ id });
 });
 
 app.post('/api/posts/:id/heart', async (req, res) => {
   await db.heartPost(req.params.id);
   res.json({ ok: true });
+});
+
+// Edit a post (ownership check)
+app.put('/api/posts/:id', async (req, res) => {
+  const { content, visitorId } = req.body;
+  if (!content || !visitorId) return res.status(400).json({ error: 'content and visitorId required' });
+  if (content.length > 2000) return res.status(400).json({ error: 'Content too long' });
+
+  const post = await db.getPostById(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!post.visitor_id || post.visitor_id !== visitorId) {
+    return res.status(403).json({ error: 'Not your post' });
+  }
+
+  await db.updatePost(req.params.id, content);
+  res.json({ ok: true });
+});
+
+// Delete a post (ownership check)
+app.delete('/api/posts/:id', async (req, res) => {
+  const { visitorId } = req.body;
+  if (!visitorId) return res.status(400).json({ error: 'visitorId required' });
+
+  const post = await db.getPostById(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!post.visitor_id || post.visitor_id !== visitorId) {
+    return res.status(403).json({ error: 'Not your post' });
+  }
+
+  await db.deletePost(req.params.id);
+  res.json({ ok: true });
+});
+
+// Private reply to a post (signed-in users only)
+app.post('/api/posts/:id/reply', async (req, res) => {
+  const { name, content, visitorId } = req.body;
+  if (!name || !content || !visitorId) return res.status(400).json({ error: 'name, content, and visitorId required' });
+  if (content.length > 1000) return res.status(400).json({ error: 'Reply too long (max 1000 characters)' });
+  if (name.length > 100) return res.status(400).json({ error: 'Name too long' });
+
+  const post = await db.getPostById(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!post.visitor_id) return res.status(400).json({ error: 'Cannot reply to anonymous posts' });
+  if (post.visitor_id === visitorId) return res.status(400).json({ error: 'Cannot reply to your own post' });
+
+  // Rate limit: max 3 replies per visitor per post
+  try {
+    const existingResult = await db.query(
+      'SELECT COUNT(*) as count FROM post_replies WHERE post_id = $1 AND visitor_id = $2',
+      [req.params.id, visitorId]
+    );
+    if (existingResult.rows[0] && parseInt(existingResult.rows[0].count) >= 3) {
+      return res.status(429).json({ error: 'You have already reached out enough on this post.' });
+    }
+  } catch (e) { /* ignore */ }
+
+  const id = await db.createReply(req.params.id, visitorId, name, content);
+  res.json({ id });
+});
+
+// Get replies for a post (post owner only), marks as read
+app.get('/api/posts/:id/replies', async (req, res) => {
+  const { visitorId } = req.query;
+  if (!visitorId) return res.status(400).json({ error: 'visitorId required' });
+
+  const post = await db.getPostById(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (!post.visitor_id || post.visitor_id !== visitorId) {
+    return res.status(403).json({ error: 'Only the post author can view replies' });
+  }
+
+  const replies = await db.getRepliesForPost(req.params.id);
+  // Mark all as read
+  await db.markRepliesRead(req.params.id);
+
+  // Strip visitor_id from replies (privacy)
+  const safeReplies = replies.map(r => ({
+    id: r.id,
+    name: r.name,
+    content: r.content,
+    created_at: r.created_at
+  }));
+
+  res.json({ replies: safeReplies });
+});
+
+// Get my posts + unread reply count
+app.get('/api/my-posts', async (req, res) => {
+  const { visitorId } = req.query;
+  if (!visitorId) return res.status(400).json({ error: 'visitorId required' });
+
+  const posts = await db.getPostsByVisitor(visitorId);
+  const unreadTotal = await db.getUnreadReplyCount(visitorId);
+
+  // Get reply counts per post
+  let replyCounts = {};
+  if (posts.length > 0) {
+    try {
+      const postIds = posts.map(p => p.id);
+      const placeholders = postIds.map((_, i) => `$${i + 1}`).join(',');
+      const countResult = await db.query(
+        `SELECT post_id, COUNT(*) as count FROM post_replies WHERE post_id IN (${placeholders}) GROUP BY post_id`,
+        postIds
+      );
+      for (const row of countResult.rows) {
+        replyCounts[row.post_id] = parseInt(row.count);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  const enriched = posts.map(p => ({
+    id: p.id,
+    type: p.type,
+    name: p.name,
+    location: p.location,
+    content: p.content,
+    hearts: p.hearts,
+    created_at: p.created_at,
+    updated_at: p.updated_at,
+    reply_count: replyCounts[p.id] || 0
+  }));
+
+  res.json({ posts: enriched, unreadTotal });
 });
 
 // ==================== WELCOME BACK (Returning Visitor) ====================
@@ -939,18 +1094,96 @@ app.get('/api/video/by-journal/:journalId', requireAdmin, async (req, res) => {
 
 // ==================== SUBSCRIBERS ====================
 app.post('/api/subscribe', async (req, res) => {
-  const { email, name } = req.body;
+  const { email, name, visitorId } = req.body;
   if (!email) return res.status(400).json({ error: 'email required' });
   // Basic email validation
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: 'invalid email' });
   }
   const result = await db.addSubscriber(email, name || '');
-  if (result.success) {
-    res.json({ message: "Welcome to the movement. You matter, and we're glad you're here." });
-  } else {
-    res.json({ message: "You're already part of the movement. Thank you for being here." });
+  // Link visitor_id to subscriber for board identity
+  if (visitorId) {
+    await db.linkVisitorToSubscriber(email, visitorId);
   }
+  if (result.success) {
+    res.json({ message: "Welcome to the movement. You matter, and we're glad you're here.", signedIn: true, name: name || '' });
+  } else {
+    // Already subscribed — still link visitor if provided
+    res.json({ message: "You're already part of the movement. Thank you for being here.", signedIn: true });
+  }
+});
+
+// ==================== AUTH (Magic Code Login) ====================
+app.get('/api/auth/status', async (req, res) => {
+  const { visitorId } = req.query;
+  if (!visitorId) return res.json({ signedIn: false });
+  const sub = await db.getSubscriberByVisitorId(visitorId);
+  if (sub) {
+    res.json({ signedIn: true, name: sub.name, email: sub.email });
+  } else {
+    res.json({ signedIn: false });
+  }
+});
+
+app.post('/api/auth/send-code', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+
+  const sub = await db.getSubscriberByEmail(email);
+  if (!sub || sub.active === false) {
+    return res.status(404).json({ error: 'No account found. Join the movement first!' });
+  }
+
+  // Rate limit: max 3 codes per hour
+  const recentCount = await db.getRecentLoginCodeCount(email);
+  if (recentCount >= 3) {
+    return res.status(429).json({ error: 'Too many attempts. Try again in an hour.' });
+  }
+
+  // Generate 6-digit code
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  await db.createLoginCode(email, code, expiresAt);
+
+  // Send via Resend
+  if (RESEND_API_KEY) {
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+        body: JSON.stringify({
+          from: NEWSLETTER_FROM,
+          to: email,
+          subject: 'Your Grace login code',
+          text: `Hi${sub.name ? ' ' + sub.name : ''},\n\nYour login code is: ${code}\n\nIt expires in 10 minutes.\n\nWith love,\nGrace`,
+          html: `<p>Hi${sub.name ? ' ' + sub.name : ''},</p><p>Your login code is: <strong style="font-size:24px;letter-spacing:4px">${code}</strong></p><p>It expires in 10 minutes.</p><p>With love,<br>Grace</p>`
+        })
+      });
+    } catch (err) {
+      console.error('  [Auth] Failed to send login code:', err.message);
+      return res.status(500).json({ error: 'Could not send code. Try again.' });
+    }
+  } else {
+    console.log(`  [Auth] No RESEND_API_KEY. Code for ${email}: ${code}`);
+  }
+
+  res.json({ sent: true });
+});
+
+app.post('/api/auth/verify-code', async (req, res) => {
+  const { email, code, visitorId } = req.body;
+  if (!email || !code || !visitorId) return res.status(400).json({ error: 'email, code, and visitorId required' });
+
+  const valid = await db.verifyLoginCode(email, code.trim());
+  if (!valid) {
+    return res.status(401).json({ error: 'Invalid or expired code.' });
+  }
+
+  // Transfer identity: update subscriber's visitor_id and transfer post ownership
+  await db.updateSubscriberVisitorId(email, visitorId);
+
+  const sub = await db.getSubscriberByEmail(email);
+  res.json({ success: true, name: sub ? sub.name : '' });
 });
 
 // ==================== NEWSLETTER ====================

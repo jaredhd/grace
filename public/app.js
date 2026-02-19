@@ -5,6 +5,118 @@ document.addEventListener('DOMContentLoaded', () => {
   localStorage.setItem('grace_visitor_id', visitorId);
   let lastUserMessage = '';
 
+  // ==================== AUTH STATE ====================
+  let authState = { signedIn: false, name: '', email: '' };
+
+  const checkAuthStatus = async () => {
+    try {
+      const res = await fetch(`/api/auth/status?visitorId=${visitorId}`);
+      const data = await res.json();
+      if (data.signedIn) {
+        authState = { signedIn: true, name: data.name, email: data.email };
+      }
+    } catch (e) {}
+    renderAuthBar();
+  };
+
+  const renderAuthBar = () => {
+    const bar = document.getElementById('boardAuthBar');
+    if (!bar) return;
+    if (authState.signedIn) {
+      bar.innerHTML = `<span class="auth-status">Signed in as <strong>${escapeHtml(authState.name || authState.email)}</strong></span>`;
+      bar.className = 'board-auth signed-in';
+    } else {
+      bar.innerHTML = `<span class="auth-status">Want to edit posts or get replies?</span> <button class="auth-sign-in-btn" id="authSignInBtn">Sign in</button>`;
+      bar.className = 'board-auth';
+      const signInBtn = document.getElementById('authSignInBtn');
+      if (signInBtn) signInBtn.addEventListener('click', showSignInForm);
+    }
+  };
+
+  const showSignInForm = () => {
+    const bar = document.getElementById('boardAuthBar');
+    if (!bar) return;
+    bar.innerHTML = `
+      <div class="sign-in-form">
+        <p class="sign-in-note">Enter the email you used to join the movement:</p>
+        <div class="sign-in-row">
+          <input type="email" id="signInEmail" placeholder="your@email.com" autocomplete="email">
+          <button class="btn btn-primary btn-small" id="signInSendCode">Send code</button>
+        </div>
+        <div class="sign-in-message" id="signInMessage"></div>
+      </div>
+    `;
+    bar.className = 'board-auth signing-in';
+    document.getElementById('signInSendCode').addEventListener('click', sendSignInCode);
+    document.getElementById('signInEmail').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendSignInCode(); });
+  };
+
+  const sendSignInCode = async () => {
+    const email = document.getElementById('signInEmail').value.trim();
+    const msgEl = document.getElementById('signInMessage');
+    if (!email) { msgEl.textContent = 'Please enter your email.'; return; }
+
+    try {
+      const res = await fetch('/api/auth/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        msgEl.textContent = data.error || 'Something went wrong.';
+        return;
+      }
+      showCodeInput(email);
+    } catch (e) {
+      msgEl.textContent = 'Could not send code. Try again.';
+    }
+  };
+
+  const showCodeInput = (email) => {
+    const bar = document.getElementById('boardAuthBar');
+    if (!bar) return;
+    bar.innerHTML = `
+      <div class="sign-in-form">
+        <p class="sign-in-note">Grace sent a code to <strong>${escapeHtml(email)}</strong>. Check your email:</p>
+        <div class="sign-in-row">
+          <input type="text" id="signInCode" placeholder="6-digit code" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+          <button class="btn btn-primary btn-small" id="signInVerify">Verify</button>
+        </div>
+        <div class="sign-in-message" id="signInMessage"></div>
+      </div>
+    `;
+    bar.className = 'board-auth signing-in';
+    document.getElementById('signInVerify').addEventListener('click', () => verifyCode(email));
+    document.getElementById('signInCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyCode(email); });
+    document.getElementById('signInCode').focus();
+  };
+
+  const verifyCode = async (email) => {
+    const code = document.getElementById('signInCode').value.trim();
+    const msgEl = document.getElementById('signInMessage');
+    if (!code) { msgEl.textContent = 'Please enter the code.'; return; }
+
+    try {
+      const res = await fetch('/api/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code, visitorId })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        msgEl.textContent = data.error || 'Invalid code.';
+        return;
+      }
+      authState = { signedIn: true, name: data.name, email };
+      renderAuthBar();
+      loadPosts(currentFilter); // Refresh posts with ownership info
+      checkUnreadReplies();
+    } catch (e) {
+      msgEl.textContent = 'Could not verify. Try again.';
+    }
+  };
+
   // ==================== CHAT (floating panel only) ====================
   const floatingChat = document.getElementById('floatingChat');
   const floatingTrigger = document.getElementById('floatingTrigger');
@@ -171,7 +283,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentFilter = null;
 
   const loadPosts = async (type = null) => {
-    const url = type ? `/api/posts?type=${type}` : '/api/posts';
+    let url = type ? `/api/posts?type=${type}` : '/api/posts';
+    url += (url.includes('?') ? '&' : '?') + `visitorId=${visitorId}`;
     try {
       const res = await fetch(url);
       const data = await res.json();
@@ -186,23 +299,54 @@ document.addEventListener('DOMContentLoaded', () => {
       boardPosts.innerHTML = '<div class="empty-board">No posts yet. Be the first to share.</div>';
       return;
     }
-    boardPosts.innerHTML = posts.map(p => `
-      <div class="post post-${p.type}">
-        <div class="post-badge">${p.type === 'need' ? 'Need' : p.type === 'offer' ? 'Offer' : 'Story'}</div>
-        <div class="post-body">
-          <div class="post-meta">
-            <strong>${escapeHtml(p.name)}</strong>
-            ${p.location ? `<span class="post-location">${escapeHtml(p.location)}</span>` : ''}
+    boardPosts.innerHTML = posts.map(p => {
+      const typeLabel = p.type === 'need' ? 'Need' : p.type === 'offer' ? 'Offer' : 'Story';
+      const editedTag = p.updated_at ? ' <span class="post-edited">(edited)</span>' : '';
+
+      // Ownership controls
+      let ownerControls = '';
+      if (p.is_mine && authState.signedIn) {
+        const replyLabel = p.reply_count > 0
+          ? `<button class="view-replies-btn" data-id="${p.id}">${p.reply_count} ${p.reply_count === 1 ? 'person reached out' : 'people reached out'}</button>`
+          : '';
+        ownerControls = `
+          <div class="post-owner-actions">
+            ${replyLabel}
+            <button class="edit-post-btn" data-id="${p.id}">Edit</button>
+            <button class="delete-post-btn" data-id="${p.id}">Remove</button>
           </div>
-          <p>${escapeHtml(p.content)}</p>
-          <div class="post-actions">
-            <button class="heart-btn" data-id="${p.id}" data-type="post">${p.hearts} &#10084;</button>
-            <button class="talk-about-post" data-content="${escapeHtml(p.content)}" data-type="${p.type}">Talk to Grace about this</button>
+        `;
+      }
+
+      // Reach out button (for signed-in users viewing others' owned posts)
+      let reachOutBtn = '';
+      if (!p.is_mine && p.has_owner && authState.signedIn) {
+        reachOutBtn = `<button class="reach-out-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}">Reach out</button>`;
+      }
+
+      return `
+        <div class="post post-${p.type}" data-post-id="${p.id}">
+          <div class="post-badge">${typeLabel}</div>
+          <div class="post-body">
+            <div class="post-meta">
+              <strong>${escapeHtml(p.name)}</strong>${editedTag}
+              ${p.location ? `<span class="post-location">${escapeHtml(p.location)}</span>` : ''}
+            </div>
+            <p class="post-content-text">${escapeHtml(p.content)}</p>
+            <div class="post-actions">
+              <button class="heart-btn" data-id="${p.id}" data-type="post">${p.hearts} &#10084;</button>
+              <button class="talk-about-post" data-content="${escapeHtml(p.content)}" data-type="${p.type}">Talk to Grace about this</button>
+              ${reachOutBtn}
+            </div>
+            ${ownerControls}
+            <div class="post-replies-panel" id="replies-${p.id}" style="display:none"></div>
+            <div class="post-reply-form" id="reply-form-${p.id}" style="display:none"></div>
           </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
+    // Heart buttons
     boardPosts.querySelectorAll('.heart-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
@@ -213,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // "Talk to Grace about this" opens the floating chat with context
+    // "Talk to Grace about this"
     boardPosts.querySelectorAll('.talk-about-post').forEach(btn => {
       btn.addEventListener('click', () => {
         const postContent = btn.dataset.content;
@@ -223,6 +367,191 @@ document.addEventListener('DOMContentLoaded', () => {
         openChat();
       });
     });
+
+    // Edit buttons
+    boardPosts.querySelectorAll('.edit-post-btn').forEach(btn => {
+      btn.addEventListener('click', () => startEditPost(btn.dataset.id));
+    });
+
+    // Delete buttons
+    boardPosts.querySelectorAll('.delete-post-btn').forEach(btn => {
+      btn.addEventListener('click', () => confirmDeletePost(btn.dataset.id));
+    });
+
+    // View replies buttons
+    boardPosts.querySelectorAll('.view-replies-btn').forEach(btn => {
+      btn.addEventListener('click', () => loadReplies(btn.dataset.id));
+    });
+
+    // Reach out buttons
+    boardPosts.querySelectorAll('.reach-out-btn').forEach(btn => {
+      btn.addEventListener('click', () => showReplyForm(btn.dataset.id, btn.dataset.name));
+    });
+  };
+
+  // ==================== POST MANAGEMENT ====================
+  const startEditPost = (postId) => {
+    const postEl = boardPosts.querySelector(`[data-post-id="${postId}"]`);
+    if (!postEl) return;
+    const contentEl = postEl.querySelector('.post-content-text');
+    const currentContent = contentEl.textContent;
+
+    contentEl.innerHTML = `
+      <textarea class="edit-post-textarea" maxlength="2000" rows="3">${escapeHtml(currentContent)}</textarea>
+      <div class="edit-post-actions">
+        <button class="btn btn-primary btn-small save-edit-btn">Save</button>
+        <button class="btn btn-secondary btn-small cancel-edit-btn">Cancel</button>
+      </div>
+    `;
+
+    postEl.querySelector('.save-edit-btn').addEventListener('click', async () => {
+      const newContent = postEl.querySelector('.edit-post-textarea').value.trim();
+      if (!newContent) return;
+      try {
+        const res = await fetch(`/api/posts/${postId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: newContent, visitorId })
+        });
+        if (res.ok) loadPosts(currentFilter);
+      } catch (e) {}
+    });
+
+    postEl.querySelector('.cancel-edit-btn').addEventListener('click', () => {
+      loadPosts(currentFilter);
+    });
+  };
+
+  const confirmDeletePost = (postId) => {
+    const postEl = boardPosts.querySelector(`[data-post-id="${postId}"]`);
+    if (!postEl) return;
+    const actions = postEl.querySelector('.post-owner-actions');
+    actions.innerHTML = `
+      <span class="delete-confirm-text">Remove this post?</span>
+      <button class="btn btn-primary btn-small confirm-delete-btn">Yes, remove</button>
+      <button class="btn btn-secondary btn-small cancel-delete-btn">Cancel</button>
+    `;
+    postEl.querySelector('.confirm-delete-btn').addEventListener('click', async () => {
+      try {
+        await fetch(`/api/posts/${postId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visitorId })
+        });
+        loadPosts(currentFilter);
+      } catch (e) {}
+    });
+    postEl.querySelector('.cancel-delete-btn').addEventListener('click', () => {
+      loadPosts(currentFilter);
+    });
+  };
+
+  // ==================== PRIVATE REPLIES ====================
+  const showReplyForm = (postId, postAuthorName) => {
+    const formEl = document.getElementById(`reply-form-${postId}`);
+    if (!formEl) return;
+    if (formEl.style.display !== 'none') { formEl.style.display = 'none'; return; }
+
+    formEl.style.display = 'block';
+    formEl.innerHTML = `
+      <p class="reply-prompt">Only <strong>${escapeHtml(postAuthorName)}</strong> will see this message.</p>
+      <input type="text" class="reply-name-input" placeholder="Your name" maxlength="100" value="${escapeHtml(authState.name || '')}">
+      <textarea class="reply-content-input" placeholder="Your message..." maxlength="1000" rows="2"></textarea>
+      <div class="reply-form-actions">
+        <button class="btn btn-primary btn-small send-reply-btn">Send</button>
+        <button class="btn btn-secondary btn-small cancel-reply-btn">Cancel</button>
+      </div>
+    `;
+
+    formEl.querySelector('.send-reply-btn').addEventListener('click', async () => {
+      const name = formEl.querySelector('.reply-name-input').value.trim();
+      const content = formEl.querySelector('.reply-content-input').value.trim();
+      if (!name || !content) return;
+
+      try {
+        const res = await fetch(`/api/posts/${postId}/reply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, content, visitorId })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          formEl.innerHTML = `<p class="reply-success">Sent! ${escapeHtml(postAuthorName)} will see this when they return.</p>`;
+          setTimeout(() => { formEl.style.display = 'none'; }, 3000);
+        } else {
+          formEl.querySelector('.reply-content-input').insertAdjacentHTML('afterend',
+            `<p class="reply-error">${escapeHtml(data.error || 'Could not send.')}</p>`);
+        }
+      } catch (e) {
+        formEl.querySelector('.reply-content-input').insertAdjacentHTML('afterend',
+          '<p class="reply-error">Could not send. Try again.</p>');
+      }
+    });
+
+    formEl.querySelector('.cancel-reply-btn').addEventListener('click', () => {
+      formEl.style.display = 'none';
+    });
+  };
+
+  const loadReplies = async (postId) => {
+    const panel = document.getElementById(`replies-${postId}`);
+    if (!panel) return;
+    if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+
+    panel.style.display = 'block';
+    panel.innerHTML = '<div class="loading-small">Loading replies...</div>';
+
+    try {
+      const res = await fetch(`/api/posts/${postId}/replies?visitorId=${visitorId}`);
+      const data = await res.json();
+      if (!res.ok) { panel.innerHTML = '<p class="reply-error">Could not load replies.</p>'; return; }
+
+      if (data.replies.length === 0) {
+        panel.innerHTML = '<p class="no-replies">No replies yet.</p>';
+        return;
+      }
+
+      panel.innerHTML = data.replies.map(r => {
+        const date = new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return `
+          <div class="reply-item">
+            <div class="reply-header"><strong>${escapeHtml(r.name)}</strong> <span class="reply-date">${date}</span></div>
+            <p>${escapeHtml(r.content)}</p>
+          </div>
+        `;
+      }).join('');
+
+      // Update the button text to remove "unread" feel
+      const btn = boardPosts.querySelector(`.view-replies-btn[data-id="${postId}"]`);
+      if (btn) btn.classList.add('replies-read');
+    } catch (e) {
+      panel.innerHTML = '<p class="reply-error">Could not load replies.</p>';
+    }
+  };
+
+  // ==================== UNREAD REPLY NOTIFICATION ====================
+  const checkUnreadReplies = async () => {
+    if (!authState.signedIn) return;
+    try {
+      const res = await fetch(`/api/my-posts?visitorId=${visitorId}`);
+      const data = await res.json();
+      if (data.unreadTotal > 0) {
+        showReplyNotification(data.unreadTotal);
+      }
+    } catch (e) {}
+  };
+
+  const showReplyNotification = (count) => {
+    const existing = document.getElementById('boardNotification');
+    if (existing) existing.remove();
+
+    const bar = document.getElementById('boardAuthBar');
+    if (!bar) return;
+    const notification = document.createElement('div');
+    notification.id = 'boardNotification';
+    notification.className = 'board-notification';
+    notification.innerHTML = `<span class="reply-dot"></span> ${count} ${count === 1 ? 'person' : 'people'} reached out to you on the board`;
+    bar.insertAdjacentElement('afterend', notification);
   };
 
   document.querySelectorAll('.board-tabs .tab').forEach(tab => {
@@ -247,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, name, location, content })
+        body: JSON.stringify({ type, name, location, content, visitorId: authState.signedIn ? visitorId : null })
       });
 
       document.getElementById('postContent').value = '';
@@ -522,7 +851,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, name })
+          body: JSON.stringify({ email, name, visitorId })
         });
         const data = await res.json();
         msgEl.textContent = data.message;
@@ -530,6 +859,12 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('subEmail').value = '';
         document.getElementById('subName').value = '';
         loadStats();
+        // Auto sign-in after subscribing
+        if (data.signedIn) {
+          authState = { signedIn: true, name: name || '', email };
+          renderAuthBar();
+          loadPosts(currentFilter);
+        }
       } catch (err) {
         msgEl.textContent = 'Something went wrong. Please try again.';
         msgEl.className = 'subscribe-message error';
@@ -634,7 +969,15 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ==================== INIT ====================
-  if (boardPosts) loadPosts();
+  // Check auth first, then load posts (so ownership info is available)
+  if (document.getElementById('boardAuthBar')) {
+    checkAuthStatus().then(() => {
+      if (boardPosts) loadPosts();
+      checkUnreadReplies();
+    });
+  } else if (boardPosts) {
+    loadPosts();
+  }
   if (chainCount) loadChain();
   if (journalEntries) loadJournal();
   if (document.getElementById('heroStats')) loadStats();
