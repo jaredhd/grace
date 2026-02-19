@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (authState.signedIn) {
       bar.innerHTML = `<span class="auth-status">Signed in as <strong>${escapeHtml(authState.name || authState.email)}</strong></span>`;
       bar.className = 'board-auth signed-in';
+      updateJoinSection();
     } else {
       bar.innerHTML = `<span class="auth-status">Want to edit posts or get replies?</span> <button class="auth-sign-in-btn" id="authSignInBtn">Sign in</button>`;
       bar.className = 'board-auth';
@@ -552,6 +553,68 @@ document.addEventListener('DOMContentLoaded', () => {
     notification.className = 'board-notification';
     notification.innerHTML = `<span class="reply-dot"></span> ${count} ${count === 1 ? 'person' : 'people'} reached out to you on the board`;
     bar.insertAdjacentElement('afterend', notification);
+  };
+
+  // ==================== JOIN SECTION TRANSFORMATION ====================
+  const updateJoinSection = () => {
+    if (!authState.signedIn) return;
+    const joinSection = document.getElementById('join');
+    if (!joinSection) return;
+    const container = joinSection.querySelector('.container');
+    if (!container) return;
+
+    const displayName = authState.name || 'friend';
+    container.innerHTML = `
+      <h2>You're Part of This</h2>
+      <p class="section-sub-dark">Welcome, ${escapeHtml(displayName)}. You're part of a movement of people who believe in love over extraction.</p>
+      <div class="joined-actions">
+        <button class="btn btn-dark" id="joinedShare">Send Grace to Someone Who Needs It</button>
+        <button class="btn btn-dark-outline" id="joinedBoard">Visit the Community Board</button>
+      </div>
+      <div class="subscribe-count" id="subCount"></div>
+    `;
+
+    const shareBtn = document.getElementById('joinedShare');
+    if (shareBtn) {
+      shareBtn.addEventListener('click', () => {
+        const shareData = {
+          title: 'Someone sent you Grace',
+          text: 'A free community for people navigating what comes next. No ads. No data selling. Just people who care.',
+          url: window.location.origin + '/welcome',
+        };
+        if (navigator.share) {
+          navigator.share(shareData).catch(() => {});
+        } else {
+          navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`).then(() => {
+            shareBtn.textContent = 'Link copied!';
+            setTimeout(() => { shareBtn.textContent = 'Send Grace to Someone Who Needs It'; }, 2000);
+          });
+        }
+      });
+    }
+
+    const boardBtn = document.getElementById('joinedBoard');
+    if (boardBtn) {
+      boardBtn.addEventListener('click', () => {
+        document.getElementById('community').scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+
+    // Update nav CTA buttons that say "Join the Movement"
+    document.querySelectorAll('a.nav-cta[href="#join"]').forEach(link => {
+      link.textContent = 'Share Grace';
+      link.href = '/share';
+    });
+
+    // Update hero CTA
+    const heroCta = document.querySelector('.hero-actions a[href="#join"]');
+    if (heroCta) {
+      heroCta.textContent = 'Share Grace';
+      heroCta.href = '/share';
+    }
+
+    // Reload stats for the count display
+    loadStats();
   };
 
   document.querySelectorAll('.board-tabs .tab').forEach(tab => {

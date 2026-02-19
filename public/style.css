@@ -1006,6 +1006,51 @@ body {
   color: rgba(0,0,0,0.5);
 }
 
+.joined-actions {
+  display: flex;
+  gap: 12px;
+  max-width: 500px;
+  margin: 0 auto;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn-dark {
+  background: var(--dark);
+  color: var(--cream);
+  padding: 14px 28px;
+  border: 2px solid var(--dark);
+  border-radius: 28px;
+  font-size: 0.95rem;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-dark:hover {
+  background: var(--deep);
+  border-color: var(--deep);
+}
+
+.btn-dark-outline {
+  background: transparent;
+  color: var(--dark);
+  padding: 14px 28px;
+  border: 2px solid rgba(0,0,0,0.3);
+  border-radius: 28px;
+  font-size: 0.95rem;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-dark-outline:hover {
+  border-color: var(--dark);
+  background: rgba(0,0,0,0.05);
+}
+
 /* ==================== FLOATING CHAT ==================== */
 .floating-chat {
   position: fixed;
