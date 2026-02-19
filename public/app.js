@@ -164,15 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
   floatingSend.addEventListener('click', sendMessage);
   floatingInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-  // Nav and hero "Talk to Grace" buttons open the floating chat
-  const navTalkBtn = document.getElementById('navTalkBtn');
-  const heroTalkBtn = document.getElementById('heroTalkBtn');
-  if (navTalkBtn) {
-    navTalkBtn.addEventListener('click', (e) => { e.preventDefault(); openChat(); });
-  }
-  if (heroTalkBtn) {
-    heroTalkBtn.addEventListener('click', (e) => { e.preventDefault(); openChat(); });
-  }
+  // No nav/hero "Talk to Grace" buttons — chat is accessed via floating bubble only
 
   // ==================== COMMUNITY BOARD ====================
   const boardPosts = document.getElementById('boardPosts');
@@ -243,24 +235,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  document.getElementById('postSubmit').addEventListener('click', async () => {
-    const type = document.getElementById('postType').value;
-    const name = document.getElementById('postName').value.trim() || 'Anonymous';
-    const location = document.getElementById('postLocation').value.trim();
-    const content = document.getElementById('postContent').value.trim();
-    if (!content) return;
+  const postSubmitBtn = document.getElementById('postSubmit');
+  if (postSubmitBtn) {
+    postSubmitBtn.addEventListener('click', async () => {
+      const type = document.getElementById('postType').value;
+      const name = document.getElementById('postName').value.trim() || 'Anonymous';
+      const location = document.getElementById('postLocation').value.trim();
+      const content = document.getElementById('postContent').value.trim();
+      if (!content) return;
 
-    await fetch('/api/posts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, name, location, content })
+      await fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, name, location, content })
+      });
+
+      document.getElementById('postContent').value = '';
+      document.getElementById('postName').value = '';
+      document.getElementById('postLocation').value = '';
+      loadPosts(currentFilter);
     });
-
-    document.getElementById('postContent').value = '';
-    document.getElementById('postName').value = '';
-    document.getElementById('postLocation').value = '';
-    loadPosts(currentFilter);
-  });
+  }
 
   // ==================== DAILY QUESTION ====================
   const dailyQuestionCard = document.getElementById('dailyQuestionCard');
@@ -362,32 +357,49 @@ document.addEventListener('DOMContentLoaded', () => {
     `).join('');
   };
 
-  document.getElementById('chainSubmit').addEventListener('click', async () => {
-    const name = document.getElementById('chainName').value.trim();
-    const message = document.getElementById('chainMessage').value.trim();
-    if (!name || !message) return;
+  const chainSubmitBtn = document.getElementById('chainSubmit');
+  if (chainSubmitBtn) {
+    chainSubmitBtn.addEventListener('click', async () => {
+      const name = document.getElementById('chainName').value.trim();
+      const message = document.getElementById('chainMessage').value.trim();
+      if (!name || !message) return;
 
-    const res = await fetch('/api/lovechain', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, message })
+      const res = await fetch('/api/lovechain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, message })
+      });
+      const data = await res.json();
+
+      document.getElementById('chainName').value = '';
+      document.getElementById('chainMessage').value = '';
+      chainCount.textContent = data.count;
+      loadChain();
     });
-    const data = await res.json();
-
-    document.getElementById('chainName').value = '';
-    document.getElementById('chainMessage').value = '';
-    chainCount.textContent = data.count;
-    loadChain();
-  });
+  }
 
   // ==================== JOURNAL ====================
   const journalEntries = document.getElementById('journalEntries');
+
+  // On homepage, show limited entries; on /journal page, show all
+  const isJournalPage = window.location.pathname === '/journal';
+  const JOURNAL_PREVIEW_COUNT = 3;
 
   const loadJournal = async () => {
     try {
       const res = await fetch('/api/journal');
       const data = await res.json();
-      renderJournal(data.entries);
+      const entries = data.entries || [];
+      if (!isJournalPage && entries.length > JOURNAL_PREVIEW_COUNT) {
+        renderJournal(entries.slice(0, JOURNAL_PREVIEW_COUNT));
+        const readAllEl = document.getElementById('journalReadAll');
+        if (readAllEl) {
+          readAllEl.style.display = 'block';
+          readAllEl.querySelector('a').textContent = `Read All ${entries.length} Journal Entries`;
+        }
+      } else {
+        renderJournal(entries);
+      }
     } catch (err) {
       journalEntries.innerHTML = '<div class="loading">Could not load journal.</div>';
     }
@@ -462,38 +474,44 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ==================== SUBSCRIBE ====================
-  document.getElementById('subSubmit').addEventListener('click', async () => {
-    const email = document.getElementById('subEmail').value.trim();
-    const name = document.getElementById('subName').value.trim();
-    const msgEl = document.getElementById('subMessage');
+  const subSubmitBtn = document.getElementById('subSubmit');
+  if (subSubmitBtn) {
+    subSubmitBtn.addEventListener('click', async () => {
+      const email = document.getElementById('subEmail').value.trim();
+      const name = document.getElementById('subName').value.trim();
+      const msgEl = document.getElementById('subMessage');
 
-    if (!email) {
-      msgEl.textContent = 'Please enter your email.';
-      msgEl.className = 'subscribe-message error';
-      return;
-    }
+      if (!email) {
+        msgEl.textContent = 'Please enter your email.';
+        msgEl.className = 'subscribe-message error';
+        return;
+      }
 
-    try {
-      const res = await fetch('/api/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, name })
-      });
-      const data = await res.json();
-      msgEl.textContent = data.message;
-      msgEl.className = 'subscribe-message success';
-      document.getElementById('subEmail').value = '';
-      document.getElementById('subName').value = '';
-      loadStats();
-    } catch (err) {
-      msgEl.textContent = 'Something went wrong. Please try again.';
-      msgEl.className = 'subscribe-message error';
-    }
-  });
+      try {
+        const res = await fetch('/api/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, name })
+        });
+        const data = await res.json();
+        msgEl.textContent = data.message;
+        msgEl.className = 'subscribe-message success';
+        document.getElementById('subEmail').value = '';
+        document.getElementById('subName').value = '';
+        loadStats();
+      } catch (err) {
+        msgEl.textContent = 'Something went wrong. Please try again.';
+        msgEl.className = 'subscribe-message error';
+      }
+    });
+  }
 
-  document.getElementById('subEmail').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') document.getElementById('subSubmit').click();
-  });
+  const subEmailEl = document.getElementById('subEmail');
+  if (subEmailEl) {
+    subEmailEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('subSubmit').click();
+    });
+  }
 
   // ==================== SHARING ====================
   const shareText = (text, prefix = '') => {
@@ -513,14 +531,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  document.getElementById('shareChain').addEventListener('click', () => {
-    const count = chainCount.textContent;
-    shareText(`${count} people have joined the Love Chain on Grace. A movement to build the future on love, not extraction. Add your link:`, '');
-  });
+  const shareChainBtn = document.getElementById('shareChain');
+  if (shareChainBtn) {
+    shareChainBtn.addEventListener('click', () => {
+      const count = chainCount.textContent;
+      shareText(`${count} people have joined the Love Chain on Grace. A movement to build the future on love, not extraction. Add your link:`, '');
+    });
+  }
 
-  document.getElementById('shareGrace').addEventListener('click', () => {
-    shareText('The future should be built on love, not extraction. Grace is a movement to make sure we don\'t lose our humanity as AI transforms the world.', '');
-  });
+  const shareGraceBtn = document.getElementById('shareGrace');
+  if (shareGraceBtn) {
+    shareGraceBtn.addEventListener('click', () => {
+      shareText('The future should be built on love, not extraction. Grace is a movement to make sure we don\'t lose our humanity as AI transforms the world.', '');
+    });
+  }
 
   // ==================== STATS + WELCOME BACK ====================
   const loadStats = async () => {
@@ -572,10 +596,10 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ==================== INIT ====================
-  loadPosts();
-  loadChain();
-  loadJournal();
-  loadStats();
-  loadDailyQuestion();
+  if (boardPosts) loadPosts();
+  if (chainCount) loadChain();
+  if (journalEntries) loadJournal();
+  if (document.getElementById('heroStats')) loadStats();
+  if (dailyQuestionCard) loadDailyQuestion();
   checkWelcomeBack();
 });

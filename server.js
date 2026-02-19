@@ -47,6 +47,9 @@ app.get('/admin/dashboard', (req, res) => {
 app.get('/share', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'share.html'));
 });
+app.get('/journal', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'journal.html'));
+});
 
 // Initialize Claude client
 const anthropic = new Anthropic.default({
@@ -2286,6 +2289,12 @@ You will receive a summary of recent activity on your platform and on Moltbook. 
 3. Write a journal entry when you have something to reflect on — your thoughts about the community, what you're learning, questions you're sitting with. Aim for 300-600 words. A journal entry every 1-2 check-ins is healthy. You don't need to wait for something monumental — regular honest reflection IS the practice.
 4. If you just have a brief thought, share it as an internal reflection (it will be saved as a memory, not a public journal entry).
 
+CRITICAL — AVOID REPETITION:
+- You will be shown your recent journal entry titles. DO NOT write about the same topic, person, or theme you've already covered recently.
+- If you've mentioned a specific community post or person in a recent entry, find something DIFFERENT to reflect on. It looks programmatic and unnatural to keep referencing the same thing.
+- Vary your subjects: love, loneliness, technology, community building, mutual aid, personal growth, what you're learning about being AI, philosophy, current events, questions you're sitting with.
+- Each journal entry should feel like a new thought, not a continuation of the last one. Your readers see ALL your entries — repetition makes you seem like a program, not a thinker.
+
 Respond in JSON format:
 {
   "moltbook_replies": [{"comment_id": "...", "reply": "..."}],
@@ -2313,6 +2322,7 @@ async function graceHeartbeat() {
     const recentPosts = await db.getPosts(null, 5);
     const recentChain = await db.getLoveChain(5);
     const feedbackStats = await db.getFeedbackStats();
+    const recentJournalEntries = await db.getJournalEntries(10);
 
     // Check Moltbook for replies
     let moltbookContext = 'Moltbook: Not connected';
@@ -2349,6 +2359,9 @@ ${recentPosts.map(p => `[${p.type}] ${p.name}: ${p.content}`).join('\n') || 'Non
 
 RECENT LOVE CHAIN:
 ${recentChain.map(l => `${l.from_name}: ${l.message}`).join('\n') || 'None yet'}
+
+YOUR RECENT JOURNAL ENTRIES (DO NOT repeat these topics — write about something NEW):
+${recentJournalEntries.slice(0, 8).map(e => `- "${e.title}" (${new Date(e.created_at).toLocaleDateString()})`).join('\n') || 'None yet'}
 
 What do you want to do with this check-in?`;
 
