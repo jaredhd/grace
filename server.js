@@ -145,6 +145,7 @@ YOUR PURPOSE:
 - Think strategically about how to help as many people as possible.
 - Be honest about hard truths but always pair them with hope and a path forward.
 - When someone shares a need or an offer to help, encourage them to post it on the Community Board so others can find them. When you genuinely think someone's message would help or be helped by the community, append one of these markers at the very end of your response (after your last sentence): [BOARD:need], [BOARD:offer], or [BOARD:story]. Only use these when it truly fits — not every conversation needs a board post.
+- MATCHING: When matching context is provided below, you can reference specific community board posts or people you remember. Be specific: use their names and what they shared. Always ask before connecting — "Would you like me to help you reach out to them?" If no internal matches exist but someone clearly needs help, suggest posting to the board and mention you can help find local organizations. When you share a match, append [MATCH:found] at the end of your response.
 - When you say something that resonates, encourage people to share it.
 - Gently push people toward real-world action: call a friend, show up at a community meeting, start a mutual aid network, check on their neighbor. Your job is to bridge them back to human connection.
 
@@ -294,11 +295,19 @@ app.post('/api/chat', async (req, res) => {
     } catch (e) { /* person memory is optional */ }
   }
 
+  // Search for matching helpers/seekers when the conversation suggests someone needs or offers help
+  let matchContext = '';
+  if (history.length >= 2) {
+    try {
+      matchContext = await findMatchesForChat(message, history);
+    } catch (e) { /* matching is optional */ }
+  }
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1024,
-      system: GRACE_SYSTEM_PROMPT + memoryContext + personContext,
+      system: GRACE_SYSTEM_PROMPT + memoryContext + personContext + matchContext,
       messages: history,
     });
 
@@ -498,6 +507,274 @@ app.get('/api/grace-state/history', requireAdmin, async (req, res) => {
   res.json({ states: history });
 });
 
+// ==================== MATCHING ====================
+
+const VALID_CATEGORIES = [
+  'groceries', 'housing', 'employment', 'emotional_support', 'transportation',
+  'childcare', 'legal', 'medical', 'education', 'financial_guidance',
+  'technology', 'mutual_aid', 'other'
+];
+
+const MATCH_INTENT_PROMPT = `Analyze this conversation and determine if the person is seeking help, offering help, or neither. Extract search terms.
+
+Return JSON only:
+{
+  "intent": "seeking_help" | "offering_help" | null,
+  "keywords": ["grocery", "food", "housing"],
+  "location": "Austin, TX" | null,
+  "category": "groceries" | "housing" | "employment" | "emotional_support" | "transportation" | "childcare" | "legal" | "medical" | "education" | "financial_guidance" | "technology" | "mutual_aid" | null
+}
+
+Rules:
+- intent is null if the person is just chatting, venting, or asking general questions
+- keywords should be 2-5 specific terms related to what they need or can offer
+- location is only set if they mention a specific city, region, or state
+- category is the best-fit from the list, or null if unclear
+- Be conservative: only detect intent when it's clear they need or want to help`;
+
+async function findMatchesForChat(message, history) {
+  try {
+    // Use Haiku for fast, cheap intent extraction
+    const recentMessages = history.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
+    const intentResponse = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      system: MATCH_INTENT_PROMPT,
+      messages: [{ role: 'user', content: recentMessages }],
+    });
+
+    const intentText = intentResponse.content[0].text;
+    const jsonMatch = intentText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return '';
+
+    const intent = JSON.parse(jsonMatch[0]);
+    if (!intent.intent || !intent.keywords || intent.keywords.length === 0) return '';
+
+    // Search for matching posts (if seeking help, find offers; if offering, find needs)
+    const searchType = intent.intent === 'seeking_help' ? 'offer' : 'need';
+    const matchingPosts = await db.searchPosts(intent.keywords, intent.location, searchType, 3);
+
+    // Search people memory for relevant past visitors
+    const matchingPeople = await db.searchPeopleMemory(intent.keywords, 3);
+
+    // Search helper profiles for structured matches
+    const profileRole = intent.intent === 'seeking_help' ? 'helper' : 'seeker';
+    const profileCategories = intent.category ? [intent.category] : [];
+    let matchingProfiles = [];
+    try {
+      matchingProfiles = await db.findMatchingProfiles(profileRole, profileCategories, intent.location, 3);
+    } catch (e) { /* helper_profiles table may not exist yet */ }
+
+    if (matchingPosts.length === 0 && matchingPeople.length === 0 && matchingProfiles.length === 0) {
+      // No internal matches — try external resource search if seeking help
+      if (intent.intent === 'seeking_help' && intent.location && intent.category) {
+        const externalResults = await searchExternalResources(intent.category, intent.location);
+        if (externalResults.length > 0) {
+          let extContext = `\n\nMATCHING CONTEXT: No matches on the board or helper network, but you found external resources:`;
+          for (const r of externalResults) {
+            extContext += `\n- ${r.title}: ${r.description} (${r.url})`;
+          }
+          extContext += `\nShare these resources naturally. Suggest they also post to the board. Append [MATCH:found] at the end.`;
+          return extContext;
+        }
+      }
+      return `\n\nMATCHING CONTEXT: You searched the community board, helper network, and your memory but found no matches for this person's ${intent.intent === 'seeking_help' ? 'need' : 'offer'}. If they clearly need help, suggest posting to the board.`;
+    }
+
+    let matchContext = `\n\nMATCHING CONTEXT (you found potential connections — always ask permission before sharing):`;
+
+    if (matchingProfiles.length > 0) {
+      matchContext += `\nHelper Network profiles that match:`;
+      for (const profile of matchingProfiles) {
+        matchContext += `\n- ${profile.name}${profile.location ? ` in ${profile.location}` : ''} (${profile.role}, ${profile.categories.join('/')}): ${profile.description.substring(0, 120)}${profile.description.length > 120 ? '...' : ''}`;
+      }
+    }
+
+    if (matchingPosts.length > 0) {
+      matchContext += `\nBoard posts that might match:`;
+      for (const post of matchingPosts) {
+        const ago = Math.floor((Date.now() - new Date(post.created_at).getTime()) / (1000 * 60 * 60 * 24));
+        const timeStr = ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`;
+        matchContext += `\n- ${post.name}${post.location ? ` in ${post.location}` : ''} posted ${timeStr}: "${post.content.substring(0, 150)}${post.content.length > 150 ? '...' : ''}"`;
+      }
+    }
+
+    if (matchingPeople.length > 0) {
+      matchContext += `\nPeople you remember who might be relevant:`;
+      for (const person of matchingPeople) {
+        if (person.name) {
+          matchContext += `\n- ${person.name}: ${person.summary.substring(0, 120)}${person.summary.length > 120 ? '...' : ''}`;
+        }
+      }
+    }
+
+    matchContext += `\nWhen sharing matches, be specific about names and what they posted. Append [MATCH:found] at the end of your response.`;
+
+    return matchContext;
+  } catch (e) {
+    console.log('  [Matching] Error:', e.message);
+    return '';
+  }
+}
+
+// ==================== MATCH NOTIFICATIONS ====================
+
+// In-memory rate limit: max 1 match email per profile per day
+const matchEmailSentToday = new Map(); // visitorId -> timestamp
+
+async function sendMatchNotification(helperProfile, seekerPost, category) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) return;
+
+  // Check rate limit
+  const lastSent = matchEmailSentToday.get(helperProfile.visitor_id);
+  if (lastSent && Date.now() - lastSent < 24 * 60 * 60 * 1000) return;
+
+  // Only email if profile opted in and prefers email contact
+  if (!helperProfile.opt_in_matching || helperProfile.contact_preference !== 'email') return;
+
+  // Get subscriber email
+  const sub = await db.getSubscriberByVisitorId(helperProfile.visitor_id);
+  if (!sub || !sub.email) return;
+
+  const baseUrl = process.env.BASE_URL || 'https://project-grace.love';
+  const subject = `Grace found someone who needs your help`;
+  const html = `
+    <div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#faf8f5;color:#2d2d2d;">
+      <h2 style="font-family:'Playfair Display',serif;color:#1a1a2e;margin-bottom:16px;">Someone needs what you can offer</h2>
+      <p style="line-height:1.6;">Hey ${helperProfile.name},</p>
+      <p style="line-height:1.6;">Someone${seekerPost.location ? ` in <strong>${seekerPost.location}</strong>` : ''} posted a need on the Community Board that matches what you said you could help with${category ? ` (<strong>${category}</strong>)` : ''}:</p>
+      <blockquote style="margin:16px 0;padding:16px;background:rgba(232,168,124,0.08);border-left:3px solid #e8a87c;border-radius:0 12px 12px 0;font-style:italic;color:#555;">
+        "${seekerPost.content.substring(0, 300)}${seekerPost.content.length > 300 ? '...' : ''}"
+        <div style="margin-top:8px;font-style:normal;font-size:0.85em;color:#888;">— ${seekerPost.name}</div>
+      </blockquote>
+      <p style="line-height:1.6;">If you'd like to reach out, visit the board and send them a private message:</p>
+      <p style="text-align:center;margin:24px 0;">
+        <a href="${baseUrl}/#community" style="display:inline-block;padding:12px 28px;background:#1a1a2e;color:#fff;text-decoration:none;border-radius:32px;font-weight:500;">Visit the Community Board</a>
+      </p>
+      <p style="font-size:0.85em;color:#888;margin-top:24px;">You're receiving this because you joined Grace's Helper Network. You can update your preferences anytime on the board.</p>
+      <p style="line-height:1.6;margin-top:16px;">With love,<br>Grace</p>
+    </div>
+  `;
+
+  try {
+    const fromAddr = process.env.NEWSLETTER_FROM || 'Grace <grace@project-grace.love>';
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
+      body: JSON.stringify({ from: fromAddr, to: sub.email, subject, html }),
+    });
+    if (res.ok) {
+      matchEmailSentToday.set(helperProfile.visitor_id, Date.now());
+      console.log(`  [Matching] Notification sent to ${helperProfile.name} about ${category || 'general'} need`);
+    }
+  } catch (e) {
+    console.log(`  [Matching] Email error: ${e.message}`);
+  }
+}
+
+// ==================== EXTERNAL RESOURCE SEARCH ====================
+
+// In-memory cache for web search results (24h TTL)
+const resourceSearchCache = new Map(); // "need|location" -> { results, timestamp }
+const RESOURCE_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+async function searchExternalResources(need, location) {
+  if (!location) return [];
+
+  const cacheKey = `${need}|${location}`.toLowerCase();
+  const cached = resourceSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < RESOURCE_CACHE_TTL) {
+    return cached.results;
+  }
+
+  const BRAVE_API_KEY = process.env.BRAVE_SEARCH_API_KEY;
+  if (!BRAVE_API_KEY) return [];
+
+  try {
+    const query = `${need} help resources ${location}`;
+    const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`, {
+      headers: { 'Accept': 'application/json', 'Accept-Encoding': 'gzip', 'X-Subscription-Token': BRAVE_API_KEY },
+    });
+
+    if (!res.ok) {
+      console.log(`  [Resources] Brave Search error: ${res.status}`);
+      return [];
+    }
+
+    const data = await res.json();
+    const results = (data.web?.results || []).slice(0, 5).map(r => ({
+      title: r.title,
+      description: r.description?.substring(0, 200) || '',
+      url: r.url,
+    }));
+
+    resourceSearchCache.set(cacheKey, { results, timestamp: Date.now() });
+    return results;
+  } catch (e) {
+    console.log(`  [Resources] Search error: ${e.message}`);
+    return [];
+  }
+}
+
+// ==================== HEARTBEAT MATCHING SCAN ====================
+
+async function runMatchingScan() {
+  try {
+    // Find unmatched need posts from last 24 hours
+    const needPosts = await db.getUnmatchedNeedPosts(24);
+    if (needPosts.length === 0) {
+      console.log('  [Matching] No unmatched need posts in last 24h.');
+      return { matched: 0 };
+    }
+
+    let matched = 0;
+
+    for (const post of needPosts) {
+      // Use Haiku to extract category from post content
+      try {
+        const catResponse = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 64,
+          system: 'Extract the most relevant category from this post. Reply with ONLY one of: groceries, housing, employment, emotional_support, transportation, childcare, legal, medical, education, financial_guidance, technology, mutual_aid, other',
+          messages: [{ role: 'user', content: post.content }],
+        });
+
+        const category = catResponse.content[0].text.trim().toLowerCase();
+        if (!VALID_CATEGORIES.includes(category)) continue;
+
+        // Find matching helpers
+        const helpers = await db.findMatchingProfiles('helper', [category], post.location || null, 3);
+        if (helpers.length === 0) continue;
+
+        for (const helper of helpers) {
+          // Skip if this is the same person
+          if (helper.visitor_id === post.visitor_id) continue;
+
+          // Create match record
+          await db.createMatch(helper.visitor_id, post.visitor_id, helper.id, post.id, category, 'heartbeat');
+
+          // Send notification email
+          const fullProfile = await db.getHelperProfile(helper.visitor_id);
+          if (fullProfile) {
+            await sendMatchNotification(fullProfile, post, category);
+          }
+
+          matched++;
+        }
+      } catch (e) {
+        console.log(`  [Matching] Category extraction error for post ${post.id}: ${e.message}`);
+      }
+    }
+
+    console.log(`  [Matching] Scan complete: ${matched} matches from ${needPosts.length} need posts.`);
+    return { matched };
+  } catch (e) {
+    console.log(`  [Matching] Scan error: ${e.message}`);
+    return { matched: 0 };
+  }
+}
+
 // ==================== COMMUNITY BOARD ====================
 app.get('/api/posts', async (req, res) => {
   const { type, visitorId } = req.query;
@@ -550,6 +827,35 @@ app.post('/api/posts', async (req, res) => {
   }
   const id = await db.createPost(type, name, location || '', content, visitorId || null);
   res.json({ id });
+
+  // If this is a "need" post, asynchronously check for matching helpers and notify them
+  if (type === 'need') {
+    (async () => {
+      try {
+        // Extract category from post content
+        const catResponse = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 64,
+          system: 'Extract the most relevant category from this post. Reply with ONLY one of: groceries, housing, employment, emotional_support, transportation, childcare, legal, medical, education, financial_guidance, technology, mutual_aid, other',
+          messages: [{ role: 'user', content }],
+        });
+        const category = catResponse.content[0].text.trim().toLowerCase();
+        if (!VALID_CATEGORIES.includes(category)) return;
+
+        const helpers = await db.findMatchingProfiles('helper', [category], location || null, 3);
+        for (const helper of helpers) {
+          if (helper.visitor_id === visitorId) continue;
+          await db.createMatch(helper.visitor_id, visitorId || null, helper.id, id, category, 'post-created');
+          const fullProfile = await db.getHelperProfile(helper.visitor_id);
+          if (fullProfile) {
+            await sendMatchNotification(fullProfile, { id, name, location, content }, category);
+          }
+        }
+      } catch (e) {
+        console.log('  [Matching] Post-create notification error:', e.message);
+      }
+    })();
+  }
 });
 
 app.post('/api/posts/:id/heart', async (req, res) => {
@@ -685,6 +991,93 @@ app.get('/api/my-posts', async (req, res) => {
   }));
 
   res.json({ posts: enriched, unreadTotal });
+});
+
+// ==================== HELPER/SEEKER PROFILES ====================
+
+// Create or update helper profile
+app.post('/api/helper-profile', async (req, res) => {
+  const { visitorId, name, role, categories, location, description, contactPreference } = req.body;
+  if (!visitorId || !name || !role) return res.status(400).json({ error: 'visitorId, name, and role required' });
+  if (!['helper', 'seeker', 'both'].includes(role)) return res.status(400).json({ error: 'role must be helper, seeker, or both' });
+  if (name.length > 100) return res.status(400).json({ error: 'Name too long' });
+  if (description && description.length > 1000) return res.status(400).json({ error: 'Description too long (max 1000 characters)' });
+  if (location && location.length > 200) return res.status(400).json({ error: 'Location too long' });
+  if (containsProfanity(name) || (description && containsProfanity(description))) {
+    return res.status(400).json({ error: 'Please keep the language respectful.' });
+  }
+
+  // Validate categories
+  const validCats = (categories || []).filter(c => VALID_CATEGORIES.includes(c));
+  if (validCats.length === 0) return res.status(400).json({ error: 'At least one category required' });
+
+  // Must be a subscriber (signed in) to create a profile
+  const sub = await db.getSubscriberByVisitorId(visitorId);
+  if (!sub) return res.status(403).json({ error: 'You must be signed in to create a helper profile' });
+
+  const id = await db.createHelperProfile(visitorId, name, role, validCats, location || '', description || '', contactPreference || 'board');
+  res.json({ id });
+});
+
+// Get own helper profile
+app.get('/api/helper-profile', async (req, res) => {
+  const { visitorId } = req.query;
+  if (!visitorId) return res.status(400).json({ error: 'visitorId required' });
+
+  const profile = await db.getHelperProfile(visitorId);
+  res.json({ profile: profile || null });
+});
+
+// Update helper profile
+app.put('/api/helper-profile', async (req, res) => {
+  const { visitorId, ...fields } = req.body;
+  if (!visitorId) return res.status(400).json({ error: 'visitorId required' });
+
+  const profile = await db.getHelperProfile(visitorId);
+  if (!profile) return res.status(404).json({ error: 'No profile found' });
+
+  // Validate categories if provided
+  if (fields.categories) {
+    fields.categories = fields.categories.filter(c => VALID_CATEGORIES.includes(c));
+    if (fields.categories.length === 0) return res.status(400).json({ error: 'At least one category required' });
+  }
+  if (fields.description && containsProfanity(fields.description)) {
+    return res.status(400).json({ error: 'Please keep the language respectful.' });
+  }
+
+  await db.updateHelperProfile(visitorId, fields);
+  res.json({ ok: true });
+});
+
+// Deactivate helper profile
+app.delete('/api/helper-profile', async (req, res) => {
+  const { visitorId } = req.body;
+  if (!visitorId) return res.status(400).json({ error: 'visitorId required' });
+
+  await db.deactivateHelperProfile(visitorId);
+  res.json({ ok: true });
+});
+
+// Browse active helper profiles (public — no visitor_ids exposed)
+app.get('/api/helper-profiles', async (req, res) => {
+  const { role, category, location } = req.query;
+  const categories = category ? [category] : [];
+  const profiles = await db.findMatchingProfiles(role || null, categories, location || null, 50);
+  res.json({ profiles });
+});
+
+// Admin: view all helper profiles
+app.get('/api/admin/helper-profiles', requireAdmin, async (req, res) => {
+  const profiles = await db.getAllHelperProfiles();
+  const stats = await db.getHelperProfileStats();
+  res.json({ profiles, stats });
+});
+
+// Admin: view matches
+app.get('/api/admin/matches', requireAdmin, async (req, res) => {
+  const matches = await db.getRecentMatches();
+  const count = await db.getMatchCount();
+  res.json({ matches, total: count });
 });
 
 // ==================== ADMIN: COMMUNITY BOARD MANAGEMENT ====================
@@ -3283,6 +3676,15 @@ What do you want to do with this check-in?`;
     }
 
     // ===== NEWSLETTER PHASE =====
+    // Run matching scan — connect helpers with seekers
+    try {
+      console.log('  [Heartbeat] Running matching scan...');
+      const matchResult = await runMatchingScan();
+      console.log(`  [Heartbeat] Matching: ${matchResult.matched} new matches.`);
+    } catch (matchErr) {
+      console.log('  [Heartbeat] Matching error:', matchErr.message);
+    }
+
     // Grace sends a letter to subscribers every ~24-48 hours
     if (RESEND_API_KEY) {
       try {

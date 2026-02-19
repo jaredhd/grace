@@ -164,13 +164,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       removeTyping(typing);
 
-      // Check for [BOARD:type] markers before displaying
+      // Check for [BOARD:type] and [MATCH:found] markers before displaying
       let replyText = data.reply;
       let boardType = null;
+      let matchFound = false;
       const boardMatch = replyText.match(/\[BOARD:(need|offer|story)\]/i);
       if (boardMatch) {
         boardType = boardMatch[1].toLowerCase();
         replyText = replyText.replace(/\[BOARD:(need|offer|story)\]/gi, '').trim();
+      }
+      if (/\[MATCH:found\]/i.test(replyText)) {
+        matchFound = true;
+        replyText = replyText.replace(/\[MATCH:found\]/gi, '').trim();
       }
 
       const msgEl = addMessage(replyText, 'grace');
@@ -656,6 +661,206 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ==================== HELPER NETWORK ====================
+  const HELPER_CATEGORIES = [
+    { id: 'groceries', label: 'Groceries' },
+    { id: 'housing', label: 'Housing' },
+    { id: 'employment', label: 'Employment' },
+    { id: 'emotional_support', label: 'Emotional Support' },
+    { id: 'transportation', label: 'Transportation' },
+    { id: 'childcare', label: 'Childcare' },
+    { id: 'legal', label: 'Legal' },
+    { id: 'medical', label: 'Medical' },
+    { id: 'education', label: 'Education' },
+    { id: 'financial_guidance', label: 'Financial Guidance' },
+    { id: 'technology', label: 'Technology' },
+    { id: 'mutual_aid', label: 'Mutual Aid' },
+    { id: 'other', label: 'Other' }
+  ];
+
+  const helperNetworkEl = document.getElementById('helperNetwork');
+
+  const loadHelperNetwork = async () => {
+    if (!helperNetworkEl) return;
+
+    // Check if user has an existing profile
+    let profile = null;
+    try {
+      const res = await fetch(`/api/helper-profile?visitorId=${visitorId}`);
+      const data = await res.json();
+      profile = data.profile;
+    } catch (e) {}
+
+    if (profile) {
+      renderHelperProfileSummary(profile);
+    } else {
+      renderHelperCta();
+    }
+  };
+
+  const renderHelperCta = () => {
+    if (!helperNetworkEl) return;
+    helperNetworkEl.innerHTML = `
+      <div class="helper-cta">
+        <p class="helper-cta-text">Want to be part of Grace's helper network?</p>
+        <div class="helper-cta-buttons">
+          <button class="btn btn-accent btn-small helper-role-btn" data-role="helper">I want to help</button>
+          <button class="btn btn-accent-outline btn-small helper-role-btn" data-role="seeker">I need help</button>
+        </div>
+      </div>
+    `;
+
+    helperNetworkEl.querySelectorAll('.helper-role-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!authState.signedIn) {
+          helperNetworkEl.querySelector('.helper-cta-text').textContent = 'Sign in above to join the helper network.';
+          helperNetworkEl.querySelector('.helper-cta-text').classList.add('helper-cta-warning');
+          return;
+        }
+        showHelperForm(btn.dataset.role);
+      });
+    });
+  };
+
+  const showHelperForm = (initialRole = 'helper') => {
+    if (!helperNetworkEl) return;
+    const roleLabel = initialRole === 'helper' ? 'What can you offer?' : 'What do you need help with?';
+    const selectedCats = [];
+
+    helperNetworkEl.innerHTML = `
+      <div class="helper-form">
+        <h4>${initialRole === 'helper' ? 'Join as a Helper' : 'Tell Us What You Need'}</h4>
+        <div class="helper-role-toggle">
+          <button class="role-opt ${initialRole === 'helper' ? 'active' : ''}" data-role="helper">Helper</button>
+          <button class="role-opt ${initialRole === 'seeker' ? 'active' : ''}" data-role="seeker">Seeker</button>
+          <button class="role-opt ${initialRole === 'both' ? 'active' : ''}" data-role="both">Both</button>
+        </div>
+        <div class="helper-categories">
+          <label>Select categories:</label>
+          <div class="category-chips">
+            ${HELPER_CATEGORIES.map(c => `<button class="chip" data-cat="${c.id}">${c.label}</button>`).join('')}
+          </div>
+        </div>
+        <input type="text" class="helper-location" placeholder="Your city/region" maxlength="200" value="${escapeHtml(authState.name ? '' : '')}">
+        <textarea class="helper-description" placeholder="${roleLabel}" maxlength="1000" rows="2"></textarea>
+        <div class="helper-consent">
+          <label><input type="checkbox" class="helper-consent-check"> I agree to be matched with people who ${initialRole === 'helper' ? 'need' : 'can offer'} help</label>
+        </div>
+        <div class="helper-form-actions">
+          <button class="btn btn-primary btn-small helper-submit-btn">Save Profile</button>
+          <button class="btn btn-secondary btn-small helper-cancel-btn">Cancel</button>
+        </div>
+        <p class="helper-form-error" style="display:none"></p>
+      </div>
+    `;
+
+    // Role toggle
+    let currentRole = initialRole;
+    helperNetworkEl.querySelectorAll('.role-opt').forEach(opt => {
+      opt.addEventListener('click', () => {
+        helperNetworkEl.querySelectorAll('.role-opt').forEach(o => o.classList.remove('active'));
+        opt.classList.add('active');
+        currentRole = opt.dataset.role;
+      });
+    });
+
+    // Category chips
+    helperNetworkEl.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        chip.classList.toggle('selected');
+      });
+    });
+
+    // Cancel
+    helperNetworkEl.querySelector('.helper-cancel-btn').addEventListener('click', () => {
+      renderHelperCta();
+    });
+
+    // Submit
+    helperNetworkEl.querySelector('.helper-submit-btn').addEventListener('click', async () => {
+      const consent = helperNetworkEl.querySelector('.helper-consent-check').checked;
+      if (!consent) {
+        showHelperError('Please agree to matching to continue.');
+        return;
+      }
+
+      const categories = [...helperNetworkEl.querySelectorAll('.chip.selected')].map(c => c.dataset.cat);
+      if (categories.length === 0) {
+        showHelperError('Please select at least one category.');
+        return;
+      }
+
+      const location = helperNetworkEl.querySelector('.helper-location').value.trim();
+      const description = helperNetworkEl.querySelector('.helper-description').value.trim();
+      const name = authState.name || 'Anonymous';
+
+      try {
+        const res = await fetch('/api/helper-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visitorId, name, role: currentRole, categories, location, description })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          loadHelperNetwork();
+        } else {
+          showHelperError(data.error || 'Could not save profile.');
+        }
+      } catch (e) {
+        showHelperError('Could not save profile. Try again.');
+      }
+    });
+  };
+
+  const showHelperError = (msg) => {
+    const errEl = helperNetworkEl.querySelector('.helper-form-error');
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.style.display = 'block';
+    }
+  };
+
+  const renderHelperProfileSummary = (profile) => {
+    if (!helperNetworkEl) return;
+    const roleLabel = profile.role === 'helper' ? 'Helper' : profile.role === 'seeker' ? 'Seeker' : 'Helper & Seeker';
+    const catLabels = (profile.categories || []).map(c => {
+      const found = HELPER_CATEGORIES.find(h => h.id === c);
+      return found ? found.label : c;
+    });
+
+    helperNetworkEl.innerHTML = `
+      <div class="helper-profile-summary">
+        <div class="helper-profile-header">
+          <span class="helper-role-badge helper-role-${profile.role}">${roleLabel}</span>
+          <span class="helper-profile-name">${escapeHtml(profile.name)}</span>
+          ${profile.location ? `<span class="helper-profile-location">${escapeHtml(profile.location)}</span>` : ''}
+        </div>
+        <div class="helper-profile-cats">${catLabels.map(c => `<span class="chip chip-small">${escapeHtml(c)}</span>`).join('')}</div>
+        ${profile.description ? `<p class="helper-profile-desc">${escapeHtml(profile.description)}</p>` : ''}
+        <div class="helper-profile-actions">
+          <button class="btn btn-secondary btn-small helper-edit-btn">Edit</button>
+          <button class="btn btn-secondary btn-small helper-deactivate-btn">Deactivate</button>
+        </div>
+      </div>
+    `;
+
+    helperNetworkEl.querySelector('.helper-edit-btn').addEventListener('click', () => {
+      showHelperForm(profile.role);
+    });
+
+    helperNetworkEl.querySelector('.helper-deactivate-btn').addEventListener('click', async () => {
+      if (!confirm('Deactivate your helper profile? You can reactivate anytime.')) return;
+      try {
+        await fetch('/api/helper-profile', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visitorId })
+        });
+        renderHelperCta();
+      } catch (e) {}
+    });
+  };
+
   // ==================== DAILY QUESTION ====================
   const dailyQuestionCard = document.getElementById('dailyQuestionCard');
 
@@ -1044,6 +1249,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAuthStatus().then(() => {
       if (boardPosts) loadPosts();
       checkUnreadReplies();
+      loadHelperNetwork();
     });
   } else if (boardPosts) {
     loadPosts();

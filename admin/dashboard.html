@@ -184,6 +184,9 @@
           <a class="nav-item" data-section="video">
             <span class="nav-icon">&#9654;</span> Video Journal
           </a>
+          <a class="nav-item" data-section="matching">
+            <span class="nav-icon">&#128279;</span> Matching
+          </a>
         </div>
         <div class="sidebar-footer">
           <button class="btn btn-outline btn-sm" id="triggerHeartbeat" style="width:100%;margin-bottom:6px;">Trigger Heartbeat</button>
@@ -525,6 +528,26 @@
           </div>
         </div>
 
+        <!-- ==================== MATCHING ==================== -->
+        <div class="dash-section" id="section-matching">
+          <h2>Helper/Seeker Matching</h2>
+          <p class="section-subtitle">View helper profiles, track matches, and monitor the matching system.</p>
+          <div class="stats-grid" style="margin-bottom:24px;">
+            <div class="stat-card"><div class="stat-number" id="matchingProfileCount">-</div><div class="stat-label">Active Profiles</div></div>
+            <div class="stat-card"><div class="stat-number" id="matchingHelperCount">-</div><div class="stat-label">Helpers</div></div>
+            <div class="stat-card"><div class="stat-number" id="matchingSeekerCount">-</div><div class="stat-label">Seekers</div></div>
+            <div class="stat-card"><div class="stat-number" id="matchingMatchCount">-</div><div class="stat-label">Matches Made</div></div>
+          </div>
+          <h3 style="margin-bottom:12px;font-size:1rem;">Helper Profiles</h3>
+          <div id="matchingProfiles" class="content-box" style="max-height:400px;overflow-y:auto;">
+            <div class="empty">Loading profiles...</div>
+          </div>
+          <h3 style="margin:24px 0 12px;font-size:1rem;">Recent Matches</h3>
+          <div id="matchingMatches" class="content-box" style="max-height:300px;overflow-y:auto;">
+            <div class="empty">Loading matches...</div>
+          </div>
+        </div>
+
         <!-- ==================== COMMUNITY BOARD ==================== -->
         <div class="dash-section" id="section-community">
           <h2>Community Board</h2>
@@ -670,6 +693,69 @@
         case 'community':
           loadCommunityPosts();
           break;
+        case 'matching':
+          loadMatchingData();
+          break;
+      }
+    }
+
+    async function loadMatchingData() {
+      const esc = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+      try {
+        const [profilesRes, matchesRes] = await Promise.all([
+          fetch('/api/admin/helper-profiles', { headers: { 'X-Admin-Token': adminToken } }),
+          fetch('/api/admin/matches', { headers: { 'X-Admin-Token': adminToken } })
+        ]);
+        const profilesData = await profilesRes.json();
+        const matchesData = await matchesRes.json();
+
+        // Stats
+        document.getElementById('matchingProfileCount').textContent = profilesData.stats.total;
+        const helperCount = profilesData.stats.byRole.find(r => r.role === 'helper');
+        const seekerCount = profilesData.stats.byRole.find(r => r.role === 'seeker');
+        const bothCount = profilesData.stats.byRole.find(r => r.role === 'both');
+        document.getElementById('matchingHelperCount').textContent = (helperCount ? parseInt(helperCount.count) : 0) + (bothCount ? parseInt(bothCount.count) : 0);
+        document.getElementById('matchingSeekerCount').textContent = (seekerCount ? parseInt(seekerCount.count) : 0) + (bothCount ? parseInt(bothCount.count) : 0);
+        document.getElementById('matchingMatchCount').textContent = matchesData.total;
+
+        // Profiles list
+        const profilesEl = document.getElementById('matchingProfiles');
+        if (profilesData.profiles.length === 0) {
+          profilesEl.innerHTML = '<div class="empty">No helper profiles yet.</div>';
+        } else {
+          profilesEl.innerHTML = profilesData.profiles.map(p => `
+            <div style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <strong style="color:#fff;">${esc(p.name)}</strong>
+                <span style="margin-left:8px;padding:2px 8px;border-radius:10px;font-size:0.65rem;font-weight:600;${p.role === 'helper' ? 'background:rgba(46,204,113,0.2);color:#2ecc71;' : p.role === 'seeker' ? 'background:rgba(232,168,124,0.2);color:#e8a87c;' : 'background:rgba(155,89,182,0.2);color:#9b59b6;'}">${p.role.toUpperCase()}</span>
+                ${p.active ? '' : '<span style="margin-left:6px;color:#e74c3c;font-size:0.7rem;">INACTIVE</span>'}
+                ${p.location ? `<span style="margin-left:8px;color:rgba(255,255,255,0.4);font-size:0.8rem;">${esc(p.location)}</span>` : ''}
+                <div style="margin-top:4px;font-size:0.75rem;color:rgba(255,255,255,0.4);">
+                  ${(p.categories || []).join(', ')} &middot; Contact: ${p.contact_preference}
+                </div>
+                ${p.description ? `<div style="margin-top:4px;font-size:0.8rem;color:rgba(255,255,255,0.6);">${esc(p.description).substring(0, 150)}</div>` : ''}
+              </div>
+              <div style="font-size:0.7rem;color:rgba(255,255,255,0.3);">${new Date(p.created_at).toLocaleDateString()}</div>
+            </div>
+          `).join('');
+        }
+
+        // Matches list
+        const matchesEl = document.getElementById('matchingMatches');
+        if (matchesData.matches.length === 0) {
+          matchesEl.innerHTML = '<div class="empty">No matches yet.</div>';
+        } else {
+          matchesEl.innerHTML = matchesData.matches.map(m => `
+            <div style="padding:10px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.8rem;">
+              <span style="color:#e8a87c;">${esc(m.category || 'general')}</span>
+              <span style="margin-left:8px;color:rgba(255,255,255,0.5);">via ${m.origin}</span>
+              <span style="margin-left:8px;padding:2px 8px;border-radius:8px;font-size:0.65rem;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.5);">${m.status}</span>
+              <span style="float:right;color:rgba(255,255,255,0.3);">${new Date(m.created_at).toLocaleDateString()}</span>
+            </div>
+          `).join('');
+        }
+      } catch (e) {
+        document.getElementById('matchingProfiles').innerHTML = '<div class="empty">Error loading matching data.</div>';
       }
     }
 

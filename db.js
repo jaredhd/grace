@@ -315,6 +315,39 @@ const initDb = async () => {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_moltbook_follows_agent ON moltbook_follows (agent_name)`);
 
+  // Helper/Seeker matching profiles
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS helper_profiles (
+      id TEXT PRIMARY KEY,
+      visitor_id TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'helper',
+      categories TEXT[] DEFAULT '{}',
+      location TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      contact_preference TEXT DEFAULT 'board',
+      opt_in_matching BOOLEAN DEFAULT true,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Match tracking
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS matches (
+      id TEXT PRIMARY KEY,
+      helper_visitor_id TEXT,
+      seeker_visitor_id TEXT,
+      helper_profile_id TEXT,
+      seeker_post_id TEXT,
+      category TEXT,
+      origin TEXT DEFAULT 'system',
+      status TEXT DEFAULT 'suggested',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   return pool;
 };
 
@@ -352,6 +385,52 @@ module.exports = {
       return await query('SELECT * FROM posts WHERE type = $1 ORDER BY created_at DESC LIMIT $2', [type, limit]);
     }
     return await query('SELECT * FROM posts ORDER BY created_at DESC LIMIT $1', [limit]);
+  },
+
+  // Search posts by keywords and optional location/type (for matching)
+  searchPosts: async (keywords = [], location = null, type = null, limit = 5) => {
+    if (!keywords.length) return [];
+    const conditions = ['(1=1)'];
+    const params = [];
+    let idx = 1;
+
+    // Build keyword ILIKE conditions (match ANY keyword in content or name)
+    const keywordConditions = keywords.map(k => {
+      params.push(`%${k}%`);
+      return `(content ILIKE $${idx++} OR name ILIKE $${idx - 1})`;
+    });
+    conditions.push(`(${keywordConditions.join(' OR ')})`);
+
+    if (location) {
+      params.push(`%${location}%`);
+      conditions.push(`location ILIKE $${idx++}`);
+    }
+    if (type) {
+      params.push(type);
+      conditions.push(`type = $${idx++}`);
+    }
+
+    params.push(limit);
+    return await query(
+      `SELECT * FROM posts WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC LIMIT $${idx}`,
+      params
+    );
+  },
+
+  // Search people memory for matching topics/summaries (for matching)
+  searchPeopleMemory: async (keywords = [], limit = 5) => {
+    if (!keywords.length) return [];
+    const params = [];
+    let idx = 1;
+    const keywordConditions = keywords.map(k => {
+      params.push(`%${k}%`);
+      return `(summary ILIKE $${idx++} OR last_topics ILIKE $${idx - 1})`;
+    });
+    params.push(limit);
+    return await query(
+      `SELECT visitor_id, name, summary, last_topics FROM people_memory WHERE ${keywordConditions.join(' OR ')} LIMIT $${idx}`,
+      params
+    );
   },
 
   heartPost: async (id) => {
@@ -1009,5 +1088,122 @@ module.exports = {
       [agentName]
     );
     return !!result;
+  },
+
+  // ==================== HELPER/SEEKER MATCHING ====================
+
+  createHelperProfile: async (visitorId, name, role, categories, location, description, contactPreference) => {
+    const id = uuid();
+    await run(
+      `INSERT INTO helper_profiles (id, visitor_id, name, role, categories, location, description, contact_preference)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (visitor_id) DO UPDATE SET
+         name = $3, role = $4, categories = $5, location = $6, description = $7,
+         contact_preference = $8, active = true, updated_at = NOW()`,
+      [id, visitorId, name, role, categories, location || '', description || '', contactPreference || 'board']
+    );
+    return id;
+  },
+
+  getHelperProfile: async (visitorId) => {
+    return await queryOne('SELECT * FROM helper_profiles WHERE visitor_id = $1 AND active = true', [visitorId]);
+  },
+
+  updateHelperProfile: async (visitorId, fields) => {
+    const allowed = ['name', 'role', 'categories', 'location', 'description', 'contact_preference', 'opt_in_matching'];
+    const sets = [];
+    const params = [];
+    let idx = 1;
+    for (const [key, val] of Object.entries(fields)) {
+      if (allowed.includes(key)) {
+        sets.push(`${key} = $${idx++}`);
+        params.push(val);
+      }
+    }
+    if (sets.length === 0) return;
+    sets.push('updated_at = NOW()');
+    params.push(visitorId);
+    await run(`UPDATE helper_profiles SET ${sets.join(', ')} WHERE visitor_id = $${idx}`, params);
+  },
+
+  deactivateHelperProfile: async (visitorId) => {
+    await run('UPDATE helper_profiles SET active = false, updated_at = NOW() WHERE visitor_id = $1', [visitorId]);
+  },
+
+  findMatchingProfiles: async (role, categories = [], location = null, limit = 10) => {
+    const conditions = ['active = true', 'opt_in_matching = true'];
+    const params = [];
+    let idx = 1;
+
+    // Find the opposite role: if seeking helpers, search for role='helper' or 'both'
+    if (role === 'helper') {
+      conditions.push(`(role = 'helper' OR role = 'both')`);
+    } else if (role === 'seeker') {
+      conditions.push(`(role = 'seeker' OR role = 'both')`);
+    }
+
+    // Match ANY overlapping category
+    if (categories.length > 0) {
+      params.push(categories);
+      conditions.push(`categories && $${idx++}`);
+    }
+
+    // Location ILIKE match
+    if (location) {
+      params.push(`%${location}%`);
+      conditions.push(`location ILIKE $${idx++}`);
+    }
+
+    params.push(limit);
+    return await query(
+      `SELECT id, name, role, categories, location, description, contact_preference, created_at
+       FROM helper_profiles WHERE ${conditions.join(' AND ')} ORDER BY updated_at DESC LIMIT $${idx}`,
+      params
+    );
+  },
+
+  getHelperProfileStats: async () => {
+    const byRole = await query('SELECT role, COUNT(*) as count FROM helper_profiles WHERE active = true GROUP BY role');
+    const total = await queryOne('SELECT COUNT(*) as count FROM helper_profiles WHERE active = true');
+    return { byRole, total: total ? parseInt(total.count) : 0 };
+  },
+
+  getAllHelperProfiles: async (limit = 100) => {
+    return await query('SELECT * FROM helper_profiles ORDER BY created_at DESC LIMIT $1', [limit]);
+  },
+
+  // Match tracking
+  createMatch: async (helperVisitorId, seekerVisitorId, helperProfileId, seekerPostId, category, origin) => {
+    const id = uuid();
+    await run(
+      `INSERT INTO matches (id, helper_visitor_id, seeker_visitor_id, helper_profile_id, seeker_post_id, category, origin)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, helperVisitorId || null, seekerVisitorId || null, helperProfileId || null, seekerPostId || null, category || '', origin || 'system']
+    );
+    return id;
+  },
+
+  updateMatchStatus: async (id, status) => {
+    await run('UPDATE matches SET status = $1 WHERE id = $2', [status, id]);
+  },
+
+  getRecentMatches: async (limit = 50) => {
+    return await query('SELECT * FROM matches ORDER BY created_at DESC LIMIT $1', [limit]);
+  },
+
+  getMatchCount: async () => {
+    const result = await queryOne('SELECT COUNT(*) as count FROM matches');
+    return result ? parseInt(result.count) : 0;
+  },
+
+  // Find need posts from last N hours that haven't been matched yet
+  getUnmatchedNeedPosts: async (hours = 24) => {
+    return await query(
+      `SELECT p.* FROM posts p
+       WHERE p.type = 'need' AND p.created_at > NOW() - INTERVAL '1 hour' * $1
+       AND p.id NOT IN (SELECT seeker_post_id FROM matches WHERE seeker_post_id IS NOT NULL)
+       ORDER BY p.created_at DESC`,
+      [hours]
+    );
   },
 };
