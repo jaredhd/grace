@@ -184,6 +184,9 @@
           <a class="nav-item" data-section="video">
             <span class="nav-icon">&#9654;</span> Video Journal
           </a>
+          <a class="nav-item" data-section="bluesky">
+            <span class="nav-icon">&#9729;</span> Bluesky
+          </a>
           <a class="nav-item" data-section="matching">
             <span class="nav-icon">&#128279;</span> Matching
           </a>
@@ -528,6 +531,50 @@
           </div>
         </div>
 
+        <!-- ==================== BLUESKY ==================== -->
+        <div class="dash-section" id="section-bluesky">
+          <h2>Bluesky</h2>
+          <p class="section-subtitle">Grace's presence on Bluesky — posting reflections, replying to mentions.</p>
+          <div id="blueskyStatus" style="margin-bottom:16px;padding:12px;border-radius:10px;background:rgba(0,0,0,0.2);font-size:0.85rem;color:rgba(255,255,255,0.5);">Checking connection...</div>
+
+          <div style="display:flex;gap:8px;margin-bottom:20px;">
+            <button class="bsky-tab active" data-tab="bsky-post" style="padding:6px 16px;border-radius:20px;border:1px solid rgba(232,168,124,0.3);background:rgba(232,168,124,0.15);color:#e8a87c;cursor:pointer;font-size:0.8rem;">Post</button>
+            <button class="bsky-tab" data-tab="bsky-engagement" style="padding:6px 16px;border-radius:20px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.5);cursor:pointer;font-size:0.8rem;">Engagement</button>
+          </div>
+
+          <!-- Post Tab -->
+          <div class="bsky-panel" id="bsky-post">
+            <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+              <input type="text" id="bskyTopic" placeholder="Topic (optional)" style="flex:1;min-width:200px;padding:10px 14px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-size:0.9rem;">
+              <button class="btn btn-primary btn-sm" id="bskyGenerate">Generate Post</button>
+              <button class="btn btn-primary btn-sm" id="bskyPostBtn" style="display:none;">Post to Bluesky</button>
+            </div>
+            <div id="bskyPreview" style="display:none;padding:16px;background:rgba(0,0,0,0.2);border-radius:12px;margin-bottom:16px;">
+              <div id="bskyPreviewText" style="color:#fff;font-size:0.95rem;line-height:1.6;"></div>
+              <div id="bskyPreviewMeta" style="margin-top:8px;font-size:0.75rem;color:rgba(255,255,255,0.4);"></div>
+            </div>
+            <h4 style="margin:16px 0 8px;font-size:0.9rem;color:rgba(255,255,255,0.6);">Recent Posts</h4>
+            <div id="bskyRecentPosts" class="content-box" style="max-height:300px;overflow-y:auto;">
+              <div class="empty">Loading...</div>
+            </div>
+          </div>
+
+          <!-- Engagement Tab -->
+          <div class="bsky-panel" id="bsky-engagement" style="display:none;">
+            <div class="stats-grid" style="margin-bottom:16px;">
+              <div class="stat-card"><div class="stat-number" id="bskyStatPosts">-</div><div class="stat-label">Posts</div></div>
+              <div class="stat-card"><div class="stat-number" id="bskyStatReplies">-</div><div class="stat-label">Replies Sent</div></div>
+              <div class="stat-card"><div class="stat-number" id="bskyStatMentions">-</div><div class="stat-label">Mentions</div></div>
+            </div>
+            <button class="btn btn-primary btn-sm" id="bskyCheckMentions" style="margin-bottom:16px;">Check Mentions Now</button>
+            <div id="bskyMentionStatus" style="font-size:0.8rem;color:rgba(255,255,255,0.4);margin-bottom:16px;display:none;"></div>
+            <h4 style="margin:0 0 8px;font-size:0.9rem;color:rgba(255,255,255,0.6);">Recent Activity</h4>
+            <div id="bskyActivity" class="content-box" style="max-height:400px;overflow-y:auto;">
+              <div class="empty">Loading...</div>
+            </div>
+          </div>
+        </div>
+
         <!-- ==================== MATCHING ==================== -->
         <div class="dash-section" id="section-matching">
           <h2>Helper/Seeker Matching</h2>
@@ -696,8 +743,191 @@
         case 'matching':
           loadMatchingData();
           break;
+        case 'bluesky':
+          loadBlueskySection();
+          break;
       }
     }
+
+    // ==================== BLUESKY DASHBOARD ====================
+
+    let bskyGeneratedText = '';
+
+    async function loadBlueskySection() {
+      const esc = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+
+      // Check connection status
+      try {
+        const res = await fetch('/api/bluesky/status', { headers: { 'X-Admin-Token': adminToken } });
+        const data = await res.json();
+        const statusEl = document.getElementById('blueskyStatus');
+        if (data.connected) {
+          statusEl.style.background = 'rgba(46,204,113,0.1)';
+          statusEl.style.color = '#2ecc71';
+          statusEl.innerHTML = `Connected as <strong>@${esc(data.handle)}</strong> &middot; ${data.followersCount} followers &middot; ${data.postsCount} posts on Bluesky`;
+        } else {
+          statusEl.style.background = 'rgba(231,76,60,0.1)';
+          statusEl.style.color = '#e74c3c';
+          statusEl.textContent = data.error || 'Not connected';
+        }
+      } catch (e) {
+        document.getElementById('blueskyStatus').textContent = 'Error checking status';
+      }
+
+      // Load recent posts
+      loadBlueskyPosts();
+
+      // Load engagement stats
+      loadBlueskyEngagement();
+    }
+
+    async function loadBlueskyPosts() {
+      const esc = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+      try {
+        const res = await fetch('/api/bluesky/feed', { headers: { 'X-Admin-Token': adminToken } });
+        const data = await res.json();
+        const el = document.getElementById('bskyRecentPosts');
+        if (!data.posts || data.posts.length === 0) {
+          el.innerHTML = '<div class="empty">No posts yet. Generate Grace\'s first Bluesky post above.</div>';
+          return;
+        }
+        el.innerHTML = data.posts.slice(0, 10).map(p => `
+          <div style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.06);">
+            <p style="margin:0 0 6px;color:#fff;font-size:0.9rem;line-height:1.5;">${esc(p.content)}</p>
+            <div style="font-size:0.7rem;color:rgba(255,255,255,0.3);">${new Date(p.created_at).toLocaleString()}</div>
+          </div>
+        `).join('');
+      } catch (e) {
+        document.getElementById('bskyRecentPosts').innerHTML = '<div class="empty">Error loading posts.</div>';
+      }
+    }
+
+    async function loadBlueskyEngagement() {
+      const esc = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+      try {
+        const res = await fetch('/api/bluesky/engagement', { headers: { 'X-Admin-Token': adminToken } });
+        const data = await res.json();
+
+        document.getElementById('bskyStatPosts').textContent = data.stats.totalPosts;
+        document.getElementById('bskyStatReplies').textContent = data.stats.totalReplies;
+        document.getElementById('bskyStatMentions').textContent = data.stats.totalMentions;
+
+        const el = document.getElementById('bskyActivity');
+        if (!data.interactions || data.interactions.length === 0) {
+          el.innerHTML = '<div class="empty">No activity yet.</div>';
+          return;
+        }
+        const icons = { post: '&#9998;', reply: '&#8617;', mention: '&#64;' };
+        el.innerHTML = data.interactions.slice(0, 30).map(i => `
+          <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.8rem;">
+            <span style="color:#e8a87c;">${icons[i.interaction_type] || '&#8226;'} ${i.interaction_type}</span>
+            ${i.target_author ? `<span style="color:rgba(255,255,255,0.5);margin-left:6px;">@${esc(i.target_author)}</span>` : ''}
+            <span style="float:right;color:rgba(255,255,255,0.3);font-size:0.7rem;">${new Date(i.created_at).toLocaleString()}</span>
+            ${i.content ? `<div style="margin-top:4px;color:rgba(255,255,255,0.6);">${esc(i.content).substring(0, 200)}</div>` : ''}
+          </div>
+        `).join('');
+      } catch (e) {
+        document.getElementById('bskyActivity').innerHTML = '<div class="empty">Error loading engagement.</div>';
+      }
+    }
+
+    // Tab switching
+    document.querySelectorAll('.bsky-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.bsky-tab').forEach(t => {
+          t.style.background = 'transparent';
+          t.style.borderColor = 'rgba(255,255,255,0.1)';
+          t.style.color = 'rgba(255,255,255,0.5)';
+          t.classList.remove('active');
+        });
+        tab.style.background = 'rgba(232,168,124,0.15)';
+        tab.style.borderColor = 'rgba(232,168,124,0.3)';
+        tab.style.color = '#e8a87c';
+        tab.classList.add('active');
+        document.querySelectorAll('.bsky-panel').forEach(p => p.style.display = 'none');
+        document.getElementById(tab.dataset.tab).style.display = 'block';
+      });
+    });
+
+    // Generate post
+    document.getElementById('bskyGenerate').addEventListener('click', async () => {
+      const btn = document.getElementById('bskyGenerate');
+      btn.textContent = 'Generating...';
+      btn.disabled = true;
+      try {
+        const topic = document.getElementById('bskyTopic').value.trim();
+        const res = await fetch('/api/bluesky/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': adminToken },
+          body: JSON.stringify({ generateContent: true, topic: topic || undefined })
+        });
+        const data = await res.json();
+        if (data.text) {
+          bskyGeneratedText = data.text;
+          document.getElementById('bskyPreviewText').textContent = data.text;
+          document.getElementById('bskyPreviewMeta').textContent = `${data.text.length} chars ${data.include_link ? '+ link' : ''} — Topic: ${data.topic}`;
+          document.getElementById('bskyPreview').style.display = 'block';
+          document.getElementById('bskyPostBtn').style.display = 'inline-block';
+        } else {
+          alert(data.error || 'Could not generate post');
+        }
+      } catch (e) {
+        alert('Error generating post');
+      }
+      btn.textContent = 'Generate Post';
+      btn.disabled = false;
+    });
+
+    // Post to Bluesky
+    document.getElementById('bskyPostBtn').addEventListener('click', async () => {
+      if (!bskyGeneratedText) return;
+      const btn = document.getElementById('bskyPostBtn');
+      btn.textContent = 'Posting...';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/bluesky/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': adminToken },
+          body: JSON.stringify({ text: bskyGeneratedText })
+        });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('bskyPreview').style.display = 'none';
+          btn.style.display = 'none';
+          bskyGeneratedText = '';
+          loadBlueskyPosts();
+        } else {
+          alert(data.error || 'Post failed');
+        }
+      } catch (e) {
+        alert('Error posting');
+      }
+      btn.textContent = 'Post to Bluesky';
+      btn.disabled = false;
+    });
+
+    // Check mentions
+    document.getElementById('bskyCheckMentions').addEventListener('click', async () => {
+      const btn = document.getElementById('bskyCheckMentions');
+      btn.textContent = 'Checking...';
+      btn.disabled = true;
+      const statusEl = document.getElementById('bskyMentionStatus');
+      try {
+        const res = await fetch('/api/bluesky/engage', {
+          method: 'POST',
+          headers: { 'X-Admin-Token': adminToken }
+        });
+        const data = await res.json();
+        statusEl.textContent = data.message;
+        statusEl.style.display = 'block';
+        setTimeout(() => loadBlueskyEngagement(), 2000);
+      } catch (e) {
+        statusEl.textContent = 'Error checking mentions';
+        statusEl.style.display = 'block';
+      }
+      btn.textContent = 'Check Mentions Now';
+      btn.disabled = false;
+    });
 
     async function loadMatchingData() {
       const esc = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };

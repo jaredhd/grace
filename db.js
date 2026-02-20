@@ -348,6 +348,27 @@ const initDb = async () => {
     )
   `);
 
+  // Bluesky integration
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bluesky_posts (
+      id TEXT PRIMARY KEY,
+      post_uri TEXT NOT NULL,
+      post_cid TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bluesky_interactions (
+      id TEXT PRIMARY KEY,
+      interaction_type TEXT NOT NULL,
+      target_uri TEXT DEFAULT '',
+      target_author TEXT DEFAULT '',
+      content TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   return pool;
 };
 
@@ -1205,5 +1226,44 @@ module.exports = {
        ORDER BY p.created_at DESC`,
       [hours]
     );
+  },
+
+  // ==================== BLUESKY ====================
+
+  logBlueskyPost: async (postUri, postCid, content) => {
+    const id = uuid();
+    await run(
+      'INSERT INTO bluesky_posts (id, post_uri, post_cid, content) VALUES ($1, $2, $3, $4)',
+      [id, postUri, postCid, content]
+    );
+    return id;
+  },
+
+  getRecentBlueskyPosts: async (limit = 20) => {
+    return await query('SELECT * FROM bluesky_posts ORDER BY created_at DESC LIMIT $1', [limit]);
+  },
+
+  logBlueskyInteraction: async (type, targetUri, targetAuthor, content) => {
+    const id = uuid();
+    await run(
+      'INSERT INTO bluesky_interactions (id, interaction_type, target_uri, target_author, content) VALUES ($1, $2, $3, $4, $5)',
+      [id, type, targetUri || '', targetAuthor || '', content || '']
+    );
+    return id;
+  },
+
+  getRecentBlueskyInteractions: async (limit = 50) => {
+    return await query('SELECT * FROM bluesky_interactions ORDER BY created_at DESC LIMIT $1', [limit]);
+  },
+
+  getBlueskyStats: async () => {
+    const posts = await queryOne('SELECT COUNT(*) as count FROM bluesky_posts');
+    const replies = await queryOne("SELECT COUNT(*) as count FROM bluesky_interactions WHERE interaction_type = 'reply'");
+    const mentions = await queryOne("SELECT COUNT(*) as count FROM bluesky_interactions WHERE interaction_type = 'mention'");
+    return {
+      totalPosts: posts ? parseInt(posts.count) : 0,
+      totalReplies: replies ? parseInt(replies.count) : 0,
+      totalMentions: mentions ? parseInt(mentions.count) : 0,
+    };
   },
 };

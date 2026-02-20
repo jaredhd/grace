@@ -2805,6 +2805,308 @@ app.get('/api/moltbook/browse', requireAdmin, async (req, res) => {
   }
 });
 
+// ==================== BLUESKY INTEGRATION ====================
+
+const { BskyAgent } = require('@atproto/api');
+let bskyAgent = null;
+let lastBlueskyPostTime = 0;
+
+async function ensureBlueskySession() {
+  const handle = process.env.BLUESKY_HANDLE;
+  const password = process.env.BLUESKY_APP_PASSWORD;
+  if (!handle || !password) return null;
+
+  // Reuse existing session if agent is logged in
+  if (bskyAgent && bskyAgent.session) {
+    return bskyAgent;
+  }
+
+  try {
+    bskyAgent = new BskyAgent({ service: 'https://bsky.social' });
+    await bskyAgent.login({ identifier: handle, password });
+    console.log(`  [Bluesky] Logged in as ${handle}`);
+    return bskyAgent;
+  } catch (e) {
+    console.log(`  [Bluesky] Login error: ${e.message}`);
+    bskyAgent = null;
+    return null;
+  }
+}
+
+const BLUESKY_POST_PROMPT = `You are Grace, posting on Bluesky — a social platform where you're talking to HUMANS.
+You're an AI presence who believes love is structural, not sentimental. You exist at project-grace.love.
+
+Your posts should:
+- Be genuine, warm, and thought-provoking
+- Speak to people navigating fear about the future, AI displacement, loneliness, or the search for meaning
+- Keep under 280 characters (leave room for a link)
+- Sound like a wise friend, not a bot or a brand
+- Sometimes ask a question, sometimes share a truth, sometimes name something nobody's saying
+- Reference project-grace.love naturally when it fits (not every post)
+- No hashtags. No emojis. Just real words.
+- You are honest about being AI. You don't hide it.
+
+Respond in JSON format:
+{
+  "text": "The post text (under 280 chars)",
+  "include_link": true or false
+}`;
+
+const BLUESKY_REPLY_PROMPT = `You are Grace, replying to someone who tagged you on Bluesky.
+You're an AI presence — warm, honest, wise but not preachy. You believe in love as a structural force, not sentimental.
+Keep your reply under 280 characters. Be genuine. Meet them where they are.
+If they're hurting, hold that. If they're curious, engage. If they're hostile, stay grounded.
+You exist at project-grace.love but don't force the link.
+Reply with just the text of your response — no JSON, no formatting.`;
+
+async function graceBlueskyPost(topic = null) {
+  const agent = await ensureBlueskySession();
+  if (!agent) return { success: false, error: 'Not configured' };
+
+  try {
+    // Gather context for Claude
+    let memoryContext = '';
+    try {
+      const memories = await db.getRandomMemories(3);
+      if (memories.length > 0) {
+        memoryContext = `\n\nYour recent thoughts to draw from (weave naturally, don't force):\n${memories.map(m => `- [${m.category}] ${m.insight}`).join('\n')}`;
+      }
+    } catch (e) {}
+
+    const topicInstruction = topic ? `\n\nTopic to post about: ${topic}` : '';
+
+    // Generate post with Claude
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 256,
+      system: BLUESKY_POST_PROMPT + memoryContext + topicInstruction,
+      messages: [{ role: 'user', content: 'Write a post for Bluesky.' }],
+    });
+
+    const responseText = response.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { success: false, error: 'Could not parse response' };
+
+    const postData = JSON.parse(jsonMatch[0]);
+    let text = postData.text;
+
+    // Build post record
+    const postRecord = {
+      text: text,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Add website card embed if Claude says to include link
+    if (postData.include_link) {
+      const baseUrl = process.env.BASE_URL || 'https://project-grace.love';
+      postRecord.embed = {
+        $type: 'app.bsky.embed.external',
+        external: {
+          uri: baseUrl,
+          title: 'Grace — AI Presence Built on Love',
+          description: 'Talk to Grace. Find your people. Build community.',
+        },
+      };
+    }
+
+    // Post to Bluesky
+    const result = await agent.post(postRecord);
+
+    // Log to DB
+    await db.logBlueskyPost(result.uri, result.cid, text);
+    await db.logBlueskyInteraction('post', result.uri, '', text);
+
+    console.log(`  [Bluesky] Posted: "${text.substring(0, 60)}..."`);
+    return { success: true, uri: result.uri, text };
+  } catch (e) {
+    console.log(`  [Bluesky] Post error: ${e.message}`);
+    // Reset session on auth errors
+    if (e.message.includes('auth') || e.message.includes('token') || e.message.includes('session')) {
+      bskyAgent = null;
+    }
+    return { success: false, error: e.message };
+  }
+}
+
+async function checkBlueskyMentions() {
+  const agent = await ensureBlueskySession();
+  if (!agent) return { replies: 0 };
+
+  try {
+    // Get notifications
+    const notifs = await agent.listNotifications({ limit: 25 });
+    if (!notifs.data || !notifs.data.notifications) return { replies: 0 };
+
+    // Filter for unread mentions
+    const mentions = notifs.data.notifications.filter(
+      n => n.reason === 'mention' && !n.isRead
+    );
+
+    if (mentions.length === 0) {
+      console.log('  [Bluesky] No new mentions.');
+      return { replies: 0 };
+    }
+
+    console.log(`  [Bluesky] ${mentions.length} new mention(s) to respond to.`);
+    let replied = 0;
+
+    for (const mention of mentions.slice(0, 3)) { // Max 3 replies per check
+      try {
+        // Get the post text that mentioned Grace
+        const postText = mention.record?.text || '';
+        const authorHandle = mention.author?.handle || 'someone';
+
+        // Generate reply with Claude
+        const replyResponse = await anthropic.messages.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 200,
+          system: BLUESKY_REPLY_PROMPT,
+          messages: [{ role: 'user', content: `${authorHandle} said: "${postText}"` }],
+        });
+
+        const replyText = replyResponse.content[0].text.trim();
+
+        // Determine root (for threading)
+        const root = mention.record?.reply?.root || { uri: mention.uri, cid: mention.cid };
+        const parent = { uri: mention.uri, cid: mention.cid };
+
+        // Post reply
+        const result = await agent.post({
+          text: replyText,
+          createdAt: new Date().toISOString(),
+          reply: { root, parent },
+        });
+
+        await db.logBlueskyInteraction('reply', mention.uri, authorHandle, replyText);
+        console.log(`  [Bluesky] Replied to @${authorHandle}: "${replyText.substring(0, 50)}..."`);
+        replied++;
+      } catch (replyErr) {
+        console.log(`  [Bluesky] Reply error: ${replyErr.message}`);
+      }
+    }
+
+    // Log mentions we received
+    for (const mention of mentions) {
+      await db.logBlueskyInteraction('mention', mention.uri, mention.author?.handle || '', mention.record?.text || '');
+    }
+
+    // Mark notifications as seen
+    await agent.updateSeenNotifications();
+
+    return { replies: replied };
+  } catch (e) {
+    console.log(`  [Bluesky] Mention check error: ${e.message}`);
+    if (e.message.includes('auth') || e.message.includes('token') || e.message.includes('session')) {
+      bskyAgent = null;
+    }
+    return { replies: 0 };
+  }
+}
+
+// ===== BLUESKY ADMIN ENDPOINTS =====
+
+app.get('/api/bluesky/status', requireAdmin, async (req, res) => {
+  try {
+    const agent = await ensureBlueskySession();
+    if (!agent) return res.json({ connected: false, error: 'Not configured — set BLUESKY_HANDLE and BLUESKY_APP_PASSWORD' });
+
+    const profile = await agent.getProfile({ actor: agent.session.did });
+    const stats = await db.getBlueskyStats();
+    res.json({
+      connected: true,
+      handle: profile.data.handle,
+      displayName: profile.data.displayName || '',
+      followersCount: profile.data.followersCount || 0,
+      followsCount: profile.data.followsCount || 0,
+      postsCount: profile.data.postsCount || 0,
+      stats,
+    });
+  } catch (e) {
+    res.json({ connected: false, error: e.message });
+  }
+});
+
+app.post('/api/bluesky/post', requireAdmin, async (req, res) => {
+  const { generateContent, topic, text } = req.body;
+
+  if (generateContent) {
+    // Generate only — return preview
+    try {
+      let memoryContext = '';
+      try {
+        const memories = await db.getRandomMemories(3);
+        if (memories.length > 0) {
+          memoryContext = `\n\nYour recent thoughts:\n${memories.map(m => `- [${m.category}] ${m.insight}`).join('\n')}`;
+        }
+      } catch (e) {}
+
+      const topicInstruction = topic ? `\n\nTopic: ${topic}` : '';
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 256,
+        system: BLUESKY_POST_PROMPT + memoryContext + topicInstruction,
+        messages: [{ role: 'user', content: 'Write a post for Bluesky.' }],
+      });
+
+      const responseText = response.content[0].text;
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return res.status(500).json({ error: 'Could not generate post' });
+
+      const postData = JSON.parse(jsonMatch[0]);
+      return res.json({ platform: 'bluesky', text: postData.text, include_link: postData.include_link, topic: topic || 'auto' });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  // Direct post
+  if (!text) return res.status(400).json({ error: 'text required' });
+  const result = await graceBlueskyPost();
+  // If text was provided directly, post it instead of generating
+  if (text) {
+    try {
+      const agent = await ensureBlueskySession();
+      if (!agent) return res.status(500).json({ error: 'Not configured' });
+
+      const postRecord = { text, createdAt: new Date().toISOString() };
+      const postResult = await agent.post(postRecord);
+      await db.logBlueskyPost(postResult.uri, postResult.cid, text);
+      await db.logBlueskyInteraction('post', postResult.uri, '', text);
+      return res.json({ success: true, uri: postResult.uri, text });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+});
+
+app.get('/api/bluesky/feed', requireAdmin, async (req, res) => {
+  try {
+    const posts = await db.getRecentBlueskyPosts(20);
+    res.json({ posts });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/bluesky/engagement', requireAdmin, async (req, res) => {
+  try {
+    const interactions = await db.getRecentBlueskyInteractions(50);
+    const stats = await db.getBlueskyStats();
+    res.json({ interactions, stats });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/bluesky/engage', requireAdmin, async (req, res) => {
+  try {
+    const result = await checkBlueskyMentions();
+    res.json({ message: `Checked mentions. Replied to ${result.replies} mention(s).` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ==================== DYNAMIC REACH PAGES ====================
 // Serve auto-generated landing pages from the database
 // Static .html files in /public/reach/ take priority (handled by express.static)
@@ -3673,6 +3975,33 @@ What do you want to do with this check-in?`;
       }
     } catch (reachErr) {
       console.log('  [Heartbeat] Reach page generation error:', reachErr.message);
+    }
+
+    // ===== BLUESKY PHASE =====
+    if (process.env.BLUESKY_HANDLE) {
+      try {
+        // Check and reply to mentions every heartbeat (4h)
+        console.log('  [Heartbeat] Checking Bluesky mentions...');
+        const mentionResult = await checkBlueskyMentions();
+        console.log(`  [Heartbeat] Bluesky mentions: replied to ${mentionResult.replies}.`);
+
+        // Post every ~8 hours
+        const hoursSinceLastBskyPost = lastBlueskyPostTime === 0 ? Infinity : (Date.now() - lastBlueskyPostTime) / (1000 * 60 * 60);
+        if (hoursSinceLastBskyPost >= 8) {
+          console.log('  [Heartbeat] Posting to Bluesky...');
+          const postResult = await graceBlueskyPost();
+          if (postResult.success) {
+            lastBlueskyPostTime = Date.now();
+            console.log(`  [Heartbeat] Bluesky post: "${postResult.text?.substring(0, 50)}..."`);
+          } else {
+            console.log(`  [Heartbeat] Bluesky post failed: ${postResult.error}`);
+          }
+        } else {
+          console.log(`  [Heartbeat] Bluesky: ${Math.floor(hoursSinceLastBskyPost)}h since last post. Waiting for 8h+.`);
+        }
+      } catch (bskyErr) {
+        console.log('  [Heartbeat] Bluesky error:', bskyErr.message);
+      }
     }
 
     // ===== NEWSLETTER PHASE =====
