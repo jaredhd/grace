@@ -142,6 +142,10 @@
         <div class="sidebar-header">
           <h1>Grace</h1>
           <p>Content Dashboard</p>
+          <div id="apiStatusBadge" style="margin-top:8px;padding:6px 10px;border-radius:8px;font-size:0.7rem;font-weight:600;text-align:center;display:none;">
+            <span id="apiStatusDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;"></span>
+            <span id="apiStatusText">API OK</span>
+          </div>
         </div>
         <div class="sidebar-nav">
           <div class="nav-section-label">Overview</div>
@@ -223,6 +227,16 @@
             </div>
             <div id="overviewEmotionBars" style="display:flex;flex-direction:column;gap:6px;"></div>
             <div id="overviewBrainNote" style="text-align:center;color:rgba(255,255,255,0.4);font-size:0.85rem;font-style:italic;margin-top:12px;">Grace is resting...</div>
+          </div>
+
+          <!-- API Health Alert (only visible when not ok) -->
+          <div id="apiHealthCard" style="display:none;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:16px;padding:20px;margin-bottom:24px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span style="font-weight:600;color:#e74c3c;font-size:0.9rem;" id="apiHealthTitle">API Issue</span>
+              <span style="font-size:0.75rem;color:rgba(255,255,255,0.4);" id="apiHealthSince"></span>
+            </div>
+            <p style="color:rgba(255,255,255,0.7);font-size:0.85rem;line-height:1.6;margin:0 0 8px 0;" id="apiHealthMessage"></p>
+            <p style="color:rgba(255,255,255,0.4);font-size:0.75rem;margin:0;">Chat, heartbeat, and AI features are paused. Community Board, Helper Network, and the website still work. Grace will auto-recover when credits are restored.</p>
           </div>
 
           <!-- Quick Traffic Preview -->
@@ -1017,6 +1031,55 @@
       // Start brain polling (lightweight, always runs for overview too)
       pollBrainState();
       setInterval(pollBrainState, 4000);
+
+      // Start API health polling
+      pollApiHealth();
+      setInterval(pollApiHealth, 30000);
+    }
+
+    // ==================== API HEALTH MONITORING ====================
+    async function pollApiHealth() {
+      try {
+        const res = await adminFetch('/api/health');
+        if (res.status === 401) return;
+        const data = await res.json();
+        const badge = document.getElementById('apiStatusBadge');
+        const dot = document.getElementById('apiStatusDot');
+        const text = document.getElementById('apiStatusText');
+        const healthCard = document.getElementById('apiHealthCard');
+        badge.style.display = 'block';
+
+        if (data.api === 'ok') {
+          badge.style.background = 'rgba(39,174,96,0.15)';
+          dot.style.background = '#27ae60';
+          text.textContent = 'API Online';
+          text.style.color = '#27ae60';
+          if (healthCard) healthCard.style.display = 'none';
+        } else if (data.api === 'credit_exhausted') {
+          badge.style.background = 'rgba(231,76,60,0.15)';
+          dot.style.background = '#e74c3c';
+          const mins = data.since ? Math.round((Date.now() - new Date(data.since).getTime()) / 60000) : 0;
+          text.textContent = mins > 0 ? `Credits Exhausted (${mins}m)` : 'Credits Exhausted';
+          text.style.color = '#e74c3c';
+          if (healthCard) {
+            healthCard.style.display = 'block';
+            document.getElementById('apiHealthTitle').textContent = 'API Credits Exhausted';
+            document.getElementById('apiHealthSince').textContent = data.since ? `Since ${new Date(data.since).toLocaleTimeString()}` : '';
+            document.getElementById('apiHealthMessage').textContent = data.message || 'Anthropic API credits have been exhausted.';
+          }
+        } else if (data.api === 'degraded') {
+          badge.style.background = 'rgba(243,156,18,0.15)';
+          dot.style.background = '#f39c12';
+          text.textContent = `API Degraded (${data.consecutiveFailures} failures)`;
+          text.style.color = '#f39c12';
+          if (healthCard) {
+            healthCard.style.display = 'block';
+            document.getElementById('apiHealthTitle').textContent = 'API Degraded';
+            document.getElementById('apiHealthSince').textContent = '';
+            document.getElementById('apiHealthMessage').textContent = data.message || 'Anthropic API is experiencing issues.';
+          }
+        }
+      } catch (e) { /* silent */ }
     }
 
     // ==================== OVERVIEW DATA ====================

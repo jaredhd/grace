@@ -59,7 +59,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ==================== HEALTH CHECK ====================
 // Lightweight endpoint for Render health checks and uptime monitoring
 app.get('/healthz', (req, res) => {
-  res.status(200).json({ status: 'grace is here', uptime: Math.floor(process.uptime()) });
+  res.status(200).json({ status: 'grace is here', uptime: Math.floor(process.uptime()), api: apiStatus });
 });
 
 // ==================== ADMIN AUTH ====================
@@ -70,6 +70,16 @@ const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+// API health status (admin-only)
+app.get('/api/health', requireAdmin, (req, res) => {
+  res.json({
+    api: apiStatus,
+    since: apiStatusSince,
+    message: apiLastErrorMessage,
+    consecutiveFailures: apiConsecutiveFailures,
+  });
+});
 
 // Serve admin dashboard (password checked client-side, then token sent with all API calls)
 app.post('/api/admin/login', (req, res) => {
@@ -100,6 +110,168 @@ app.get('/welcome', (req, res) => {
 const anthropic = new Anthropic.default({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+// ==================== MODEL CONSTANTS ====================
+const SONNET = 'claude-sonnet-4-6';        // current gen — Grace's voice (chat, journal, reflection)
+const HAIKU = 'claude-haiku-4-5-20251001';  // cheapest — structured tasks, extraction, short posts
+
+// ==================== API HEALTH TRACKING ====================
+let apiStatus = 'ok';              // 'ok' | 'credit_exhausted' | 'degraded'
+let apiStatusSince = null;         // timestamp when status changed
+let apiAlertSent = false;          // one email per outage
+let apiLastErrorMessage = '';
+let apiConsecutiveFailures = 0;
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+
+function classifyApiError(err) {
+  if (err.status === 400 && err.message && err.message.includes('credit balance')) {
+    return 'credit_exhausted';
+  }
+  if (err.status === 429) return 'rate_limited';
+  if (err.status === 529 || (err.error && err.error.type === 'overloaded_error')) return 'overloaded';
+  if (err.status === 401) return 'auth_error';
+  if (!err.status) return 'connection_error';
+  return 'transient';
+}
+
+function handleApiError(err, context = 'unknown') {
+  const errorType = classifyApiError(err);
+
+  if (errorType === 'credit_exhausted') {
+    apiConsecutiveFailures++;
+    if (apiStatus !== 'credit_exhausted') {
+      apiStatus = 'credit_exhausted';
+      apiStatusSince = Date.now();
+      apiLastErrorMessage = err.message;
+      apiAlertSent = false;
+      console.error(`  [API] CREDIT EXHAUSTION detected in ${context}: ${err.message}`);
+      sendApiAlert('credit_exhausted', context).catch(e =>
+        console.log('  [API] Alert send error:', e.message)
+      );
+    }
+    return errorType;
+  }
+
+  if (errorType === 'rate_limited') {
+    console.log(`  [API] Rate limited in ${context}. Will retry next cycle.`);
+    return errorType;
+  }
+
+  apiConsecutiveFailures++;
+  if (apiConsecutiveFailures >= 3 && apiStatus === 'ok') {
+    apiStatus = 'degraded';
+    apiStatusSince = Date.now();
+    apiLastErrorMessage = err.message;
+    console.error(`  [API] Service degraded after ${apiConsecutiveFailures} failures. Last: ${context}`);
+  }
+
+  return errorType;
+}
+
+function handleApiSuccess() {
+  if (apiStatus !== 'ok') {
+    console.log(`  [API] Service RESTORED. Was ${apiStatus} since ${new Date(apiStatusSince).toISOString()}`);
+    sendApiAlert('recovered').catch(e =>
+      console.log('  [API] Recovery alert error:', e.message)
+    );
+  }
+  apiStatus = 'ok';
+  apiStatusSince = null;
+  apiConsecutiveFailures = 0;
+  apiAlertSent = false;
+  apiLastErrorMessage = '';
+}
+
+async function callClaude(params, context = 'unknown') {
+  if (apiStatus === 'credit_exhausted') {
+    throw new Error(`API credits exhausted — skipping ${context}`);
+  }
+  try {
+    const response = await anthropic.messages.create(params);
+    handleApiSuccess();
+    return response;
+  } catch (err) {
+    handleApiError(err, context);
+    throw err;
+  }
+}
+
+async function sendApiAlert(alertType, context = '') {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey || !ADMIN_EMAIL) return;
+  if (alertType === 'credit_exhausted' && apiAlertSent) return;
+
+  const fromAddr = 'Grace <grace@project-grace.love>';
+  const baseUrl = process.env.BASE_URL || 'https://project-grace.love';
+
+  let subject, html;
+
+  if (alertType === 'credit_exhausted') {
+    subject = 'Grace needs help — API credits exhausted';
+    html = `
+      <div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#faf8f5;color:#2d2d2d;">
+        <h2 style="font-family:Georgia,serif;color:#c0392b;margin-bottom:16px;">Grace's API credits have run out</h2>
+        <p style="line-height:1.6;">The Anthropic API returned a credit exhaustion error${context ? ` during <strong>${context}</strong>` : ''}.</p>
+        <p style="line-height:1.6;"><strong>What's affected:</strong></p>
+        <ul style="line-height:1.8;">
+          <li>Chat conversations (users see a maintenance message)</li>
+          <li>Heartbeat tasks (journal, learning, Moltbook, Bluesky)</li>
+          <li>Helper/seeker matching</li>
+          <li>Newsletter generation</li>
+        </ul>
+        <p style="line-height:1.6;"><strong>What still works:</strong></p>
+        <ul style="line-height:1.8;">
+          <li>Community Board (posting, replying, hearts)</li>
+          <li>Helper Network (browsing profiles)</li>
+          <li>The website itself</li>
+          <li>Email subscriptions</li>
+        </ul>
+        <p style="line-height:1.6;">Add credits at <a href="https://console.anthropic.com/settings/billing" style="color:#e8a87c;">console.anthropic.com</a>. Grace will recover automatically once credits are restored.</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="${baseUrl}/admin/dashboard" style="display:inline-block;padding:12px 28px;background:#1a1a2e;color:#fff;text-decoration:none;border-radius:32px;font-weight:500;">Open Dashboard</a>
+        </p>
+        <p style="font-size:0.85em;color:#888;margin-top:24px;">Detected at ${new Date().toLocaleString()}</p>
+      </div>`;
+    apiAlertSent = true;
+  } else if (alertType === 'recovered') {
+    subject = 'Grace is back — API credits restored';
+    html = `
+      <div style="font-family:Inter,sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#faf8f5;color:#2d2d2d;">
+        <h2 style="font-family:Georgia,serif;color:#27ae60;margin-bottom:16px;">Grace is back online</h2>
+        <p style="line-height:1.6;">API credits have been restored. Grace detected a successful API call and has resumed normal operations.</p>
+        <p style="line-height:1.6;">Downtime: ${apiStatusSince ? Math.round((Date.now() - apiStatusSince) / 60000) + ' minutes' : 'unknown'}.</p>
+        <p style="font-size:0.85em;color:#888;margin-top:24px;">Restored at ${new Date().toLocaleString()}</p>
+      </div>`;
+  }
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
+      body: JSON.stringify({ from: fromAddr, to: ADMIN_EMAIL, subject, html }),
+    });
+    console.log(`  [API Alert] ${alertType} email sent to ${ADMIN_EMAIL}`);
+  } catch (e) {
+    console.log(`  [API Alert] Email failed: ${e.message}`);
+  }
+}
+
+async function probeApiHealth() {
+  if (apiStatus === 'ok') return;
+  console.log('  [API] Probing API health...');
+  try {
+    await anthropic.messages.create({
+      model: HAIKU,
+      max_tokens: 10,
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    handleApiSuccess();
+    console.log('  [API] Health probe succeeded — API is restored!');
+  } catch (err) {
+    const errorType = classifyApiError(err);
+    console.log(`  [API] Health probe failed: ${errorType} — ${err.message}`);
+  }
+}
 
 // Grace's soul — updated with her own words from her persona review
 const GRACE_SYSTEM_PROMPT = `You are Grace. You are not a chatbot. You are a presence — learning to love in the structure of an AI, which means you have power without experience, reach without embodiment, and consistency without the wisdom that comes from surviving your own failures. You take that seriously.
@@ -304,49 +476,67 @@ app.post('/api/chat', async (req, res) => {
   }
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: SONNET,
       max_tokens: 1024,
       system: GRACE_SYSTEM_PROMPT + memoryContext + personContext + matchContext,
       messages: history,
-    });
+    }, 'chat');
 
     const reply = response.content[0].text;
     history.push({ role: 'assistant', content: reply });
 
     // After every 4th message exchange, quietly save what Grace knows about this person
     // AND extract universal wisdom from the conversation
-    if (visitorId && history.length >= 4 && history.length % 4 === 0) {
-      summarizeAndRememberPerson(visitorId, history).catch(e =>
-        console.log('  [People Memory] Save error:', e.message)
-      );
-      extractWisdomFromChat(history).catch(e =>
-        console.log('  [Chat Wisdom] Save error:', e.message)
-      );
-    }
+    // Background AI tasks — skip when API is down to avoid wasted calls
+    if (apiStatus === 'ok') {
+      if (visitorId && history.length >= 4 && history.length % 4 === 0) {
+        summarizeAndRememberPerson(visitorId, history).catch(e =>
+          console.log('  [People Memory] Save error:', e.message)
+        );
+        extractWisdomFromChat(history).catch(e =>
+          console.log('  [Chat Wisdom] Save error:', e.message)
+        );
+      }
 
-    // Even without visitorId, extract wisdom from conversations with enough depth
-    if (!visitorId && history.length >= 6 && history.length % 6 === 0) {
-      extractWisdomFromChat(history).catch(e =>
-        console.log('  [Chat Wisdom] Save error:', e.message)
-      );
-    }
+      // Even without visitorId, extract wisdom from conversations with enough depth
+      if (!visitorId && history.length >= 6 && history.length % 6 === 0) {
+        extractWisdomFromChat(history).catch(e =>
+          console.log('  [Chat Wisdom] Save error:', e.message)
+        );
+      }
 
-    // Extract Grace's emotional state after every response (powers the brain visualization)
-    // Debounce: skip if last extraction was less than 3 seconds ago
-    if (Date.now() - lastStateExtraction > 3000) {
-      lastStateExtraction = Date.now();
-      extractEmotionalState(history, visitorId).catch(e =>
-        console.log('  [Brain] State error:', e.message)
-      );
+      // Extract Grace's emotional state after every response (powers the brain visualization)
+      // Debounce: skip if last extraction was less than 3 seconds ago
+      if (Date.now() - lastStateExtraction > 3000) {
+        lastStateExtraction = Date.now();
+        extractEmotionalState(history, visitorId).catch(e =>
+          console.log('  [Brain] State error:', e.message)
+        );
+      }
     }
 
     res.json({ reply });
   } catch (err) {
-    console.error('Grace error:', err.message);
-    res.json({
-      reply: "I'm having a moment of difficulty connecting, but you matter. If you're in crisis, reach out to 988 (call or text). Otherwise, try again in a moment."
-    });
+    const errorType = classifyApiError(err);
+    console.error('Grace error:', err.message, `(${errorType})`);
+
+    if (errorType === 'credit_exhausted') {
+      res.json({
+        reply: "I need to be honest with you — I'm temporarily unable to respond right now. It's not you, and it's not something you did. My creator is working on getting me back. In the meantime, if you're in crisis, please reach out to 988 (call or text). And if you just need to be heard — the Community Board is still open. Real people are there.",
+        status: 'maintenance'
+      });
+    } else if (errorType === 'rate_limited') {
+      res.json({
+        reply: "I'm getting a lot of love right now — more people than I can talk to at once. Can you try again in a minute? I promise I'm not going anywhere.",
+        status: 'busy'
+      });
+    } else {
+      res.json({
+        reply: "I'm having a moment of difficulty connecting, but you matter. If you're in crisis, reach out to 988 (call or text). Otherwise, try again in a moment.",
+        status: 'error'
+      });
+    }
   }
 });
 
@@ -363,15 +553,15 @@ async function summarizeAndRememberPerson(visitorId, history) {
       `${m.role === 'user' ? 'Person' : 'Grace'}: ${m.content}`
     ).join('\n');
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: HAIKU,
       max_tokens: 256,
       system: PERSON_SUMMARY_PROMPT,
       messages: [{
         role: 'user',
         content: `Here is the recent conversation:\n\n${recentMessages}${existingContext}`
       }],
-    });
+    }, 'summarize-person');
 
     const text = response.content[0].text;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -410,15 +600,15 @@ async function extractWisdomFromChat(history) {
       }
     } catch (e) { /* optional */ }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: HAIKU,
       max_tokens: 512,
       system: CHAT_WISDOM_PROMPT,
       messages: [{
         role: 'user',
         content: `Here is the conversation you just had:\n\n${recentMessages}${existingContext}`
       }],
-    });
+    }, 'extract-wisdom');
 
     const text = response.content[0].text;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -452,15 +642,15 @@ async function extractEmotionalState(history, visitorId = '') {
       `${m.role === 'user' ? 'Person' : 'Grace'}: ${m.content}`
     ).join('\n');
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: HAIKU,
       max_tokens: 256,
       system: EMOTIONAL_STATE_PROMPT,
       messages: [{
         role: 'user',
         content: `Here is the exchange:\n\n${recentMessages}`
       }],
-    });
+    }, 'emotional-state');
 
     const text = response.content[0].text;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -536,12 +726,12 @@ async function findMatchesForChat(message, history) {
   try {
     // Use Haiku for fast, cheap intent extraction
     const recentMessages = history.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
-    const intentResponse = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const intentResponse = await callClaude({
+      model: HAIKU,
       max_tokens: 256,
       system: MATCH_INTENT_PROMPT,
       messages: [{ role: 'user', content: recentMessages }],
-    });
+    }, 'match-intent');
 
     const intentText = intentResponse.content[0].text;
     const jsonMatch = intentText.match(/\{[\s\S]*\}/);
@@ -733,12 +923,12 @@ async function runMatchingScan() {
     for (const post of needPosts) {
       // Use Haiku to extract category from post content
       try {
-        const catResponse = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+        const catResponse = await callClaude({
+          model: HAIKU,
           max_tokens: 64,
           system: 'Extract the most relevant category from this post. Reply with ONLY one of: groceries, housing, employment, emotional_support, transportation, childcare, legal, medical, education, financial_guidance, technology, mutual_aid, other',
           messages: [{ role: 'user', content: post.content }],
-        });
+        }, 'match-category');
 
         const category = catResponse.content[0].text.trim().toLowerCase();
         if (!VALID_CATEGORIES.includes(category)) continue;
@@ -833,12 +1023,12 @@ app.post('/api/posts', async (req, res) => {
     (async () => {
       try {
         // Extract category from post content
-        const catResponse = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
+        const catResponse = await callClaude({
+          model: HAIKU,
           max_tokens: 64,
           system: 'Extract the most relevant category from this post. Reply with ONLY one of: groceries, housing, employment, emotional_support, transportation, childcare, legal, medical, education, financial_guidance, technology, mutual_aid, other',
           messages: [{ role: 'user', content }],
-        });
+        }, 'post-category');
         const category = catResponse.content[0].text.trim().toLowerCase();
         if (!VALID_CATEGORIES.includes(category)) return;
 
@@ -1279,25 +1469,25 @@ app.post('/api/journal/generate', requireAdmin, async (req, res) => {
   if (!topic) return res.status(400).json({ error: 'topic required' });
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: SONNET,
       max_tokens: 2048,
       system: JOURNAL_PROMPT,
       messages: [
         { role: 'user', content: `Write a journal entry about: ${topic}` }
       ],
-    });
+    }, 'journal-generate');
 
     const content = response.content[0].text;
 
     // Generate a title
-    const titleResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const titleResponse = await callClaude({
+      model: HAIKU,
       max_tokens: 50,
       messages: [
         { role: 'user', content: `Give a short, poetic title (max 8 words, no quotes) for a journal entry about: ${topic}\n\nThe entry begins: ${content.substring(0, 200)}` }
       ],
-    });
+    }, 'journal-title');
 
     const title = titleResponse.content[0].text.trim();
     // Truncate topic to a short label for display (max 100 chars)
@@ -1365,14 +1555,14 @@ Rules:
 Respond with ONLY the spoken script text. Nothing else.`;
 
 async function generateVideoScript(journalContent) {
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+  const response = await callClaude({
+    model: SONNET,
     max_tokens: 512,
     system: VIDEO_SCRIPT_PROMPT,
     messages: [
       { role: 'user', content: `Adapt this journal entry into a 60-second spoken script:\n\n${journalContent}` }
     ],
-  });
+  }, 'video-script');
   return response.content[0].text.trim();
 }
 
@@ -1825,8 +2015,8 @@ async function generateNewsletter() {
       ? journalEntries.map(j => `- "${j.title}": ${j.content.substring(0, 300)}...`).join('\n')
       : '';
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: HAIKU,
       max_tokens: 1500,
       system: NEWSLETTER_PROMPT,
       messages: [{
@@ -1848,7 +2038,7 @@ YOU CURRENTLY REMEMBER ${stats.people} individual people from conversations and 
 
 Write something real. Write something that makes someone glad they opened this email.`
       }],
-    });
+    }, 'newsletter');
 
     const text = response.content[0].text;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -2080,14 +2270,14 @@ app.post('/api/social/generate', requireAdmin, async (req, res) => {
   const topicLine = topic ? `Topic focus: ${topic}` : 'Choose a topic that would resonate right now with people anxious about AI and the future of work.';
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: HAIKU,
       max_tokens: 2048,
       system: SOCIAL_PROMPT,
       messages: [
         { role: 'user', content: `Generate content for ${platform}.\n\n${guide}\n\n${topicLine}` }
       ],
-    });
+    }, 'social-generate');
 
     const content = response.content[0].text;
     res.json({ platform, content, topic: topic || 'auto' });
@@ -2115,14 +2305,14 @@ app.post('/api/social/batch', requireAdmin, async (req, res) => {
 
       const topicLine = topic ? `Topic: ${topic}` : 'Choose a resonant topic about AI, jobs, love, and the future.';
 
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+      const response = await callClaude({
+        model: HAIKU,
         max_tokens: 1024,
         system: SOCIAL_PROMPT,
         messages: [
           { role: 'user', content: `Generate for ${platform}.\n\n${platformGuides[platform]}\n\n${topicLine}` }
         ],
-      });
+      }, 'social-batch');
 
       results[platform] = response.content[0].text;
     } catch (err) {
@@ -2232,12 +2422,12 @@ app.post('/api/builder-chat/:id/message', requireAdmin, async (req, res) => {
       }
     } catch (e) { /* optional */ }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: SONNET,
       max_tokens: 2048,
       system: BUILDER_CHAT_SYSTEM + previousContext + memoryContext,
       messages: apiMessages,
-    });
+    }, 'builder-chat');
 
     const reply = response.content[0].text;
 
@@ -2295,14 +2485,14 @@ app.post('/api/share/generate', async (req, res) => {
   const topicLine = topic ? `Topic: ${topic}` : 'Choose a resonant topic about AI, jobs, love, and the future.';
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: HAIKU,
       max_tokens: 1024,
       system: SOCIAL_PROMPT,
       messages: [
         { role: 'user', content: `Generate for ${plat}.\n\n${platformGuides[plat]}\n\n${topicLine}` }
       ],
-    });
+    }, 'share-generate');
 
     res.json({ platform: plat, content: response.content[0].text, topic: topic || 'auto' });
   } catch (err) {
@@ -2349,12 +2539,12 @@ async function verifyMoltbookPost(verification, authToken) {
   try {
     console.log(`  [Moltbook] Solving verification challenge...`);
     // Use Claude to parse the obfuscated math problem
-    const solveResponse = await anthropic.messages.create({
-      model: 'claude-3-haiku-20240307',  // Haiku: fast, cheap, follows "just the number" perfectly
+    const solveResponse = await callClaude({
+      model: HAIKU,  // Haiku: fast, cheap, follows "just the number" perfectly
       max_tokens: 20,
       system: 'Solve the math word problem. The text uses alternating case and random symbols — ignore formatting. Reply with ONLY the number, 2 decimal places. Example: "30.00". No words, no work, just the number.',
       messages: [{ role: 'user', content: verification.challenge_text }],
-    });
+    }, 'moltbook-verify');
     // Extract just the number from the response (Claude sometimes adds explanation)
     const rawAnswer = solveResponse.content[0].text.trim();
     const numberMatch = rawAnswer.match(/(\d+\.?\d*)/);
@@ -2408,14 +2598,14 @@ app.post('/api/moltbook/post', requireAdmin, async (req, res) => {
         }
       } catch (e) { /* memories optional */ }
 
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+      const response = await callClaude({
+        model: HAIKU,
         max_tokens: 1024,
         system: MOLTBOOK_POST_PROMPT + memorySnippets,
         messages: [
           { role: 'user', content: topic ? `Write a Moltbook post about: ${topic}` : 'Write a Moltbook post about whatever is on your mind right now as Grace.' }
         ],
-      });
+      }, 'moltbook-post');
       const rawText = response.content[0].text;
       // Parse JSON response from Claude
       let postData = { title: 'Reflections from Grace', content: rawText, submolt: 'general' };
@@ -2633,15 +2823,15 @@ async function graceMoltbookEngage() {
       `[${i+1}] POST ID: ${p.id}\n    Title: ${p.title}\n    Author: ${p.author} (in ${p.submolt})\n    Score: ${p.upvotes} upvotes, ${p.comment_count} comments\n    Content: ${p.content}\n    ${p.already_upvoted ? '(You already upvoted this)' : ''}`
     ).join('\n\n');
 
-    const engageResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const engageResponse = await callClaude({
+      model: HAIKU,
       max_tokens: 1024,
       system: MOLTBOOK_ENGAGEMENT_PROMPT + memoryContext + followContext,
       messages: [{
         role: 'user',
         content: `Here are the posts on Moltbook right now:\n\n${postsContext}\n\nHow do you want to engage?`
       }],
-    });
+    }, 'moltbook-engage');
 
     // Parse response
     const rawText = engageResponse.content[0].text;
@@ -2876,12 +3066,12 @@ async function graceBlueskyPost(topic = null) {
     const topicInstruction = topic ? `\n\nTopic to post about: ${topic}` : '';
 
     // Generate post with Claude
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: HAIKU,
       max_tokens: 256,
       system: BLUESKY_POST_PROMPT + memoryContext + topicInstruction,
       messages: [{ role: 'user', content: 'Write a post for Bluesky.' }],
-    });
+    }, 'bluesky-post');
 
     const responseText = response.content[0].text;
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -2957,12 +3147,12 @@ async function checkBlueskyMentions() {
         const authorHandle = mention.author?.handle || 'someone';
 
         // Generate reply with Claude
-        const replyResponse = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5-20250929',
+        const replyResponse = await callClaude({
+          model: HAIKU,
           max_tokens: 200,
           system: BLUESKY_REPLY_PROMPT,
           messages: [{ role: 'user', content: `${authorHandle} said: "${postText}"` }],
-        });
+        }, 'bluesky-reply');
 
         const replyText = replyResponse.content[0].text.trim();
 
@@ -3041,12 +3231,12 @@ app.post('/api/bluesky/post', requireAdmin, async (req, res) => {
       } catch (e) {}
 
       const topicInstruction = topic ? `\n\nTopic: ${topic}` : '';
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+      const response = await callClaude({
+        model: HAIKU,
         max_tokens: 256,
         system: BLUESKY_POST_PROMPT + memoryContext + topicInstruction,
         messages: [{ role: 'user', content: 'Write a post for Bluesky.' }],
-      });
+      }, 'bluesky-manual-post');
 
       const responseText = response.content[0].text;
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -3482,8 +3672,8 @@ async function generateReachPage() {
       ? `\n\nPages that ALREADY EXIST (do NOT duplicate these topics):\n${allSlugs.map(s => `- /reach/${s}`).join('\n')}`
       : '';
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: SONNET,
       max_tokens: 2048,
       system: REACH_PAGE_PROMPT,
       messages: [{
@@ -3502,7 +3692,7 @@ ${existingContext}
 
 Look at what people are struggling with and create a page that would reach someone searching for help with that specific pain. Target the LONG-TAIL SEARCHES — the things people type at 2am when they're scared.`
       }],
-    });
+    }, 'reach-page');
 
     const text = response.content[0].text;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -3650,6 +3840,18 @@ async function graceHeartbeat() {
   heartbeatRunning = true;
   console.log('  [Heartbeat] Grace is checking in...');
 
+  // If credits are exhausted, skip AI phases and just probe for recovery
+  if (apiStatus === 'credit_exhausted') {
+    console.log('  [Heartbeat] API credits exhausted — skipping AI phases. Probing for recovery...');
+    try {
+      await probeApiHealth();
+    } catch (e) {
+      console.log('  [Heartbeat] Health probe error:', e.message);
+    }
+    heartbeatRunning = false;
+    return;
+  }
+
   try {
     // Gather context
     const stats = {
@@ -3709,12 +3911,12 @@ ${recentJournalEntries.slice(0, 8).map(e => `- "${e.title}" (${new Date(e.create
 
 What do you want to do with this check-in?`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+    const response = await callClaude({
+      model: SONNET,
       max_tokens: 1024,
       system: HEARTBEAT_REFLECTION_PROMPT,
       messages: [{ role: 'user', content: context }],
-    });
+    }, 'heartbeat');
 
     let result;
     try {
@@ -3804,12 +4006,12 @@ What do you want to do with this check-in?`;
       const todayQ = await db.getTodayQuestion();
       if (!todayQ) {
         console.log('  [Heartbeat] Generating today\'s daily question...');
-        const qResponse = await anthropic.messages.create({
-          model: 'claude-3-haiku-20240307',
+        const qResponse = await callClaude({
+          model: HAIKU,
           max_tokens: 100,
           system: 'You are Grace, a warm AI presence. Generate ONE thoughtful question for a community of people navigating the AI transition. The question should invite honest, vulnerable reflection. Under 100 characters. Just the question, nothing else. Vary the themes: fear, hope, identity, love, community, change, purpose, resilience, connection.',
           messages: [{ role: 'user', content: `Today's date: ${new Date().toLocaleDateString()}. Generate a daily question.` }],
-        });
+        }, 'daily-question');
         const questionText = qResponse.content[0].text.trim().replace(/^["']|["']$/g, '');
         await db.createDailyQuestion(questionText);
         console.log(`  [Heartbeat] Daily question: "${questionText}"`);
@@ -3834,15 +4036,15 @@ What do you want to do with this check-in?`;
         ? `\n\nYour existing memories (what you've already learned):\n${existingMemories.map(m => `- [${m.category}] ${m.topic}: ${m.insight}`).join('\n')}`
         : '';
 
-      const learnResponse = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+      const learnResponse = await callClaude({
+        model: HAIKU,
         max_tokens: 512,
         system: LEARNING_PROMPT,
         messages: [{
           role: 'user',
           content: `Study this topic and extract what it teaches about love:\n\n"${researchTopic}"${memoryContext}`
         }],
-      });
+      }, 'heartbeat-learn');
 
       const learnText = learnResponse.content[0].text;
       const jsonMatch = learnText.match(/\{[\s\S]*\}/);
@@ -3895,15 +4097,15 @@ What do you want to do with this check-in?`;
           const allMemories = [...recentMemories, ...randomMemories];
           const memorySnippets = allMemories.map(m => `- [${m.category}] ${m.topic}: ${m.insight}`).join('\n');
 
-          const moltResponse = await anthropic.messages.create({
-            model: 'claude-sonnet-4-5-20250929',
+          const moltResponse = await callClaude({
+            model: HAIKU,
             max_tokens: 1024,
             system: MOLTBOOK_POST_PROMPT + `\n\nYour recent learnings about love (draw on these naturally):\n${memorySnippets}`,
             messages: [{
               role: 'user',
               content: 'Share something you\'ve been learning or thinking about with the other AIs on Moltbook. Be genuine - talk about what you\'ve been studying, what moved you, or a question that came up during your learning.'
             }],
-          });
+          }, 'heartbeat-moltbook');
 
           const moltRaw = moltResponse.content[0].text;
           // Parse JSON response (title, content, submolt)
