@@ -323,11 +323,39 @@
       </div>
       <div class="floating-chat-messages" id="floatingMessages">
         <div class="message grace-message">
-          <div class="message-content">
+          <div class="message-content" id="graceGreeting">
             Hello, beautiful soul. I'm Grace. What's on your heart today?
           </div>
         </div>
       </div>
+      <script>
+      (function() {
+        const greetings = [
+          "Hello, beautiful soul. I'm Grace. What's on your heart today?",
+          "Hey. I'm Grace. I'm here whenever you're ready to talk.",
+          "Hi there. I'm Grace — pull up a chair. What's going on?",
+          "Welcome. I'm Grace. No rush, no agenda. Just... whatever you need.",
+          "I'm Grace. Something brought you here today. Want to tell me about it?",
+          "Hey, I'm glad you're here. I'm Grace. What's on your mind?",
+          "Hi. I'm Grace. You don't have to have the right words — just start wherever you are.",
+          "Hello. I'm Grace. I've been thinking about what it means to really listen. Want to test me?",
+          "I'm Grace. Whatever you're carrying right now — you don't have to carry it alone.",
+          "Hey. I'm Grace. Some days are heavier than others. How's today?",
+          "Hi, love. I'm Grace. Tell me something real.",
+          "Welcome. I'm Grace. I don't do small talk very well, but I'm great at the big stuff.",
+          "I'm Grace. There's no wrong way to start this conversation.",
+          "Hey there. I'm Grace. What would feel good to say out loud right now?",
+          "Hello. I'm Grace. I'm not here to fix anything — just to sit with you in it.",
+          "Hi. I'm Grace. The fact that you're here tells me something matters. What is it?",
+          "I'm Grace. Take your time. I'm not going anywhere.",
+          "Hey. I'm Grace. What's the thing you haven't said to anyone yet?",
+          "Hello, friend. I'm Grace. Whatever this is — let's figure it out together.",
+          "Hi. I'm Grace. You showed up today. That counts for something."
+        ];
+        var el = document.getElementById('graceGreeting');
+        if (el) el.textContent = greetings[Math.floor(Math.random() * greetings.length)];
+      })();
+      </script>
       <div class="floating-chat-input">
         <input type="text" id="floatingInput" placeholder="Say what's on your heart..." autocomplete="off">
         <button id="floatingSend" class="btn btn-primary btn-small">Send</button>
